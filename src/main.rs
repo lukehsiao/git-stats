@@ -74,7 +74,7 @@ fn main() -> Result<()> {
         for (commits, author) in shortlog {
             let raw_stats = cmd!(
                 sh,
-                "git log --author={author} --pretty=tformat: --numstat {rev_range}"
+                "git log -F --author={author} --pretty=tformat: --numstat {rev_range}"
             )
             .read()?;
             info!(
