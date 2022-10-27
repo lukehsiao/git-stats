@@ -3,7 +3,6 @@ use std::str::FromStr;
 use anyhow::{bail, Result};
 use clap::Parser;
 use clap_verbosity_flag::{Verbosity, WarnLevel};
-use log::info;
 use rayon::prelude::*;
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
 
@@ -79,10 +78,6 @@ fn main() -> Result<()> {
                     "git log -F --author={author} --pretty=tformat: --numstat {rev_range}"
                 )
                 .read()?;
-                info!(
-                    "author: {}, commits: {}, raw_stats: {}",
-                    author, commits, raw_stats
-                );
                 let mut insertions = 0;
                 let mut deletions = 0;
                 let mut num_files = 0;
