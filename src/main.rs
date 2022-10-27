@@ -4,6 +4,7 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 use log::info;
+use rayon::prelude::*;
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
 
 use xshell::{cmd, Shell};
@@ -69,46 +70,48 @@ fn main() -> Result<()> {
         .collect::<_>();
 
     if !shortlog.is_empty() {
-        let mut stats = vec![];
-
-        for (commits, author) in shortlog {
-            let raw_stats = cmd!(
-                sh,
-                "git log -F --author={author} --pretty=tformat: --numstat {rev_range}"
-            )
-            .read()?;
-            info!(
-                "author: {}, commits: {}, raw_stats: {}",
-                author, commits, raw_stats
-            );
-            let mut insertions = 0;
-            let mut deletions = 0;
-            let mut num_files = 0;
-            for line in raw_stats.lines() {
-                let mut chunks = line.split_whitespace();
-                insertions += match chunks.next() {
-                    // For binary files
-                    Some("-") => 0,
-                    Some(n) => usize::from_str(n)?,
-                    None => bail!("Invalid shortlog line"),
-                };
-                deletions += match chunks.next() {
-                    // For binary files
-                    Some("-") => 0,
-                    Some(n) => usize::from_str(n)?,
-                    None => bail!("Invalid shortlog line"),
-                };
-                num_files += 1;
-            }
-            let stat = Stat {
-                author: author.to_string(),
-                commits,
-                insertions,
-                deletions,
-                num_files,
-            };
-            stats.push(stat);
-        }
+        let stats: Vec<Stat> = shortlog
+            .par_iter()
+            .map(|(commits, author)| {
+                let sh = Shell::new()?;
+                let raw_stats = cmd!(
+                    sh,
+                    "git log -F --author={author} --pretty=tformat: --numstat {rev_range}"
+                )
+                .read()?;
+                info!(
+                    "author: {}, commits: {}, raw_stats: {}",
+                    author, commits, raw_stats
+                );
+                let mut insertions = 0;
+                let mut deletions = 0;
+                let mut num_files = 0;
+                for line in raw_stats.lines() {
+                    let mut chunks = line.split_whitespace();
+                    insertions += match chunks.next() {
+                        // For binary files
+                        Some("-") => 0,
+                        Some(n) => usize::from_str(n)?,
+                        None => bail!("Invalid shortlog line"),
+                    };
+                    deletions += match chunks.next() {
+                        // For binary files
+                        Some("-") => 0,
+                        Some(n) => usize::from_str(n)?,
+                        None => bail!("Invalid shortlog line"),
+                    };
+                    num_files += 1;
+                }
+                Ok(Stat {
+                    author: author.to_string(),
+                    commits: *commits,
+                    insertions,
+                    deletions,
+                    num_files,
+                })
+            })
+            .filter_map(|r| r.ok())
+            .collect::<_>();
 
         let mut table = Table::new(stats);
         table
