@@ -1,3 +1,23 @@
+## 0.1.4 - 2022-10-29
+
+### Build and Dependencies
+- Run cargo update
+
+### Documentation
+- (README) Note the `git` dependency
+
+### Miscellaneous Tasks
+- Update lockfile
+- Ensure lockfile is also up-to-date after version bump
+
+### Refactor
+- Remove unused verbosity flag and deps
+
+See the commits here: [0.1.4]
+
+[0.1.4]: https://github.com/lukehsiao/git-stats/compare/v0.1.3...v0.1.4
+
+
 ## 0.1.3 - 2022-10-29
 
 ### Features
