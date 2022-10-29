@@ -5,8 +5,9 @@
 
 <div align="center">
     <strong>A small script to get more thorough shortlog stats.</strong>
-<br>
 </div>
+<br>
+<br>
 
 Git Stats parses shortlog information to get stats about the files changed, additions, and
 deletions. For example:
@@ -17,6 +18,9 @@ deletions. For example:
 
 
 ## Install
+
+This is a glorified shell script. As such, it expects that you have `git` installed on your machine
+and in your `$PATH`.
 
 ### From crates.io
 
