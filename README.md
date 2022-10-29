@@ -41,8 +41,6 @@ Arguments:
 
 Options:
   -e, --email       Show the email address of each author
-  -v, --verbose...  More output per occurrence
-  -q, --quiet...    Less output per occurrence
   -h, --help        Print help information (use `--help` for more detail)
   -V, --version     Print version information
 ```
