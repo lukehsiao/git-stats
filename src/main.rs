@@ -11,7 +11,13 @@ use xshell::{cmd, Shell};
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// The revision range to consider
+    #[arg(name = "revision-range", default_value = "HEAD")]
+    /// Show only commits in the specified revision range.
+    ///
+    /// When no <revision-range> is specified, it defaults to HEAD (i.e. the whole history leading
+    /// to the current commit). origin..HEAD specifies all the commits reachable from the current
+    /// commit (i.e. HEAD), but not from origin. For a complete list of ways to spell
+    /// [revision-range], see the "Specifying Ranges" section of gitrevisions(7).
     rev_range: String,
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,

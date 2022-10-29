@@ -27,15 +27,17 @@ cargo install git-stats --locked
 ## Usage
 
 ```
-Usage: git-stats [OPTIONS] <REV_RANGE>
+$ git stats -h
+A script for grabbing more thorough shortlog stats
+
+Usage: git-stats [OPTIONS] [revision-range]
 
 Arguments:
-  <REV_RANGE>  The revision range to consider
+  [revision-range]  Show only commits in the specified revision range [default: HEAD]
 
 Options:
   -v, --verbose...  More output per occurrence
   -q, --quiet...    Less output per occurrence
-  -h, --help        Print help information
+  -h, --help        Print help information (use `--help` for more detail)
   -V, --version     Print version information
-
 ```
