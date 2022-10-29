@@ -2,7 +2,6 @@ use std::str::FromStr;
 
 use anyhow::{bail, Result};
 use clap::Parser;
-use clap_verbosity_flag::{Verbosity, WarnLevel};
 use rayon::prelude::*;
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
 
@@ -22,8 +21,6 @@ struct Cli {
     #[arg(short, long, default_value = "false")]
     /// Show the email address of each author.
     email: bool,
-    #[command(flatten)]
-    verbose: Verbosity<WarnLevel>,
 }
 
 #[derive(Tabled)]
@@ -56,12 +53,6 @@ fn display_add(o: &usize) -> String {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-
-    env_logger::Builder::new()
-        .filter_level(cli.verbose.log_level_filter())
-        .format_timestamp(None)
-        .init();
-
     let sh = Shell::new()?;
 
     let rev_range = cli.rev_range;
