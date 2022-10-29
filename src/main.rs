@@ -19,6 +19,9 @@ struct Cli {
     /// commit (i.e. HEAD), but not from origin. For a complete list of ways to spell
     /// [revision-range], see the "Specifying Ranges" section of gitrevisions(7).
     rev_range: String,
+    #[arg(short, long, default_value = "false")]
+    /// Show the email address of each author.
+    email: bool,
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
 }
@@ -62,7 +65,11 @@ fn main() -> Result<()> {
     let sh = Shell::new()?;
 
     let rev_range = cli.rev_range;
-    let raw_shortlog = cmd!(sh, "git shortlog -sn {rev_range}").read()?;
+    let raw_shortlog = if cli.email {
+        cmd!(sh, "git shortlog -sen {rev_range}").read()?
+    } else {
+        cmd!(sh, "git shortlog -sn {rev_range}").read()?
+    };
 
     let shortlog: Vec<(usize, &str)> = raw_shortlog
         .lines()
