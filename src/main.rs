@@ -35,6 +35,8 @@ struct Stat {
     insertions: usize,
     #[tabled(rename = "Deletions", display_with = "display_del")]
     deletions: usize,
+    #[tabled(rename = "Net", display_with = "display_net")]
+    net: i64,
 }
 
 fn display_del(o: &usize) -> String {
@@ -48,6 +50,14 @@ fn display_add(o: &usize) -> String {
     match o {
         0 => format!("{}", 0),
         n => format!("+{}", n),
+    }
+}
+
+fn display_net(o: &i64) -> String {
+    match o {
+        n if *n > 0 => format!("+{}", n),
+        n if *n <= 0 => format!("{}", n),
+        _ => todo!(),
     }
 }
 
@@ -104,9 +114,10 @@ fn main() -> Result<()> {
                 Ok(Stat {
                     author: author.to_string(),
                     commits: *commits,
+                    num_files,
                     insertions,
                     deletions,
-                    num_files,
+                    net: insertions as i64 - deletions as i64,
                 })
             })
             .filter_map(|r| r.ok())
@@ -115,7 +126,7 @@ fn main() -> Result<()> {
         let mut table = Table::new(stats);
         table
             .with(Style::empty())
-            .with(Modify::new(Columns::new(1..=4)).with(Alignment::right()));
+            .with(Modify::new(Columns::new(1..=5)).with(Alignment::right()));
 
         println!("{table}");
     }

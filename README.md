@@ -13,8 +13,8 @@ Git Stats parses shortlog information to get stats about the files changed, addi
 deletions. For example:
 
     $ git stats origin..HEAD
-     Author      Commits  Changed Files  Insertions  Deletions
-     Luke Hsiao       19             42       +2816       -252
+     Author      Commits  Changed Files  Insertions  Deletions    Net
+     Luke Hsiao       23             40       +1238       -157  +1081
 
 
 ## Install
