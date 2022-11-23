@@ -1,3 +1,16 @@
+## 0.1.5 - 2022-11-23
+
+### Documentation
+- (README) Update usage example
+
+### Features
+- Add net change column to output
+
+See the commits here: [0.1.5]
+
+[0.1.5]: https://github.com/lukehsiao/git-stats/compare/v0.1.4...v0.1.5
+
+
 ## 0.1.4 - 2022-10-29
 
 ### Build and Dependencies
