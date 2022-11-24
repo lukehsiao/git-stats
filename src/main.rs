@@ -35,7 +35,7 @@ struct Stat {
     insertions: usize,
     #[tabled(rename = "Deletions", display_with = "display_del")]
     deletions: usize,
-    #[tabled(rename = "Net", display_with = "display_net")]
+    #[tabled(rename = "Net Δ", display_with = "display_net")]
     net: i64,
 }
 
