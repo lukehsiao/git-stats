@@ -1,3 +1,16 @@
+## 0.1.6 - 2023-01-05
+
+### Features
+- Output reviewer/tests and commit counts
+
+### Refactor
+- Add `Δ` in the `Net` column header
+
+See the commits here: [0.1.6]
+
+[0.1.6]: https://github.com/lukehsiao/git-stats/compare/v0.1.5...v0.1.6
+
+
 ## 0.1.5 - 2022-11-23
 
 ### Documentation
