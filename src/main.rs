@@ -39,6 +39,14 @@ struct Stat {
     net: i64,
 }
 
+#[derive(Tabled)]
+struct Review {
+    #[tabled(rename = "Reviewer/Tester")]
+    author: String,
+    #[tabled(rename = "Commits")]
+    commits: usize,
+}
+
 fn display_del(o: &usize) -> String {
     match o {
         0 => format!("{}", 0),
@@ -129,6 +137,38 @@ fn main() -> Result<()> {
             .with(Modify::new(Columns::new(1..=5)).with(Alignment::right()));
 
         println!("{table}");
+    }
+
+    let raw_reviewers = if cli.email {
+        cmd!(sh, "git shortlog -sen --group=trailer:acked-by --group=trailer:tested-by --group=trailer:reviewed-by {rev_range}").read()?
+    } else {
+        cmd!(sh, "git shortlog -sn --group=trailer:acked-by --group=trailer:tested-by --group=trailer:reviewed-by {rev_range}").read()?
+    };
+    let reviewers: Vec<(usize, &str)> = raw_reviewers
+        .lines()
+        .map(|line| {
+            let chunks = line.trim().split_once('\t').unwrap();
+            let commits = usize::from_str(chunks.0).unwrap();
+            let author = chunks.1;
+            (commits, author)
+        })
+        .collect::<_>();
+
+    if !reviewers.is_empty() {
+        let reviews: Vec<Review> = reviewers
+            .par_iter()
+            .map(|(commits, author)| Review {
+                author: author.to_string(),
+                commits: *commits,
+            })
+            .collect::<_>();
+
+        let mut table = Table::new(reviews);
+        table
+            .with(Style::empty())
+            .with(Modify::new(Columns::new(1..=1)).with(Alignment::right()));
+
+        println!("\n{table}");
     }
 
     Ok(())
