@@ -18,9 +18,13 @@ struct Cli {
     /// commit (i.e. HEAD), but not from origin. For a complete list of ways to spell
     /// [revision-range], see the "Specifying Ranges" section of gitrevisions(7).
     rev_range: String,
-    #[arg(short, long, default_value = "false")]
+    #[arg(short, long)]
     /// Show the email address of each author.
     email: bool,
+    #[arg(short, long)]
+    /// Show who reviewed/tested commits based on `Acked-by`, `Tested-by`, and
+    /// `Reviewed-by` git trailers.
+    reviews: bool,
 }
 
 #[derive(Tabled)]
@@ -139,36 +143,38 @@ fn main() -> Result<()> {
         println!("{table}");
     }
 
-    let raw_reviewers = if cli.email {
-        cmd!(sh, "git shortlog -sen --group=trailer:acked-by --group=trailer:tested-by --group=trailer:reviewed-by {rev_range}").read()?
-    } else {
-        cmd!(sh, "git shortlog -sn --group=trailer:acked-by --group=trailer:tested-by --group=trailer:reviewed-by {rev_range}").read()?
-    };
-    let reviewers: Vec<(usize, &str)> = raw_reviewers
-        .lines()
-        .map(|line| {
-            let chunks = line.trim().split_once('\t').unwrap();
-            let commits = usize::from_str(chunks.0).unwrap();
-            let author = chunks.1;
-            (commits, author)
-        })
-        .collect::<_>();
-
-    if !reviewers.is_empty() {
-        let reviews: Vec<Review> = reviewers
-            .par_iter()
-            .map(|(commits, author)| Review {
-                author: author.to_string(),
-                commits: *commits,
+    if cli.reviews {
+        let raw_reviewers = if cli.email {
+            cmd!(sh, "git shortlog -sen --group=trailer:acked-by --group=trailer:tested-by --group=trailer:reviewed-by {rev_range}").read()?
+        } else {
+            cmd!(sh, "git shortlog -sn --group=trailer:acked-by --group=trailer:tested-by --group=trailer:reviewed-by {rev_range}").read()?
+        };
+        let reviewers: Vec<(usize, &str)> = raw_reviewers
+            .lines()
+            .map(|line| {
+                let chunks = line.trim().split_once('\t').unwrap();
+                let commits = usize::from_str(chunks.0).unwrap();
+                let author = chunks.1;
+                (commits, author)
             })
             .collect::<_>();
 
-        let mut table = Table::new(reviews);
-        table
-            .with(Style::empty())
-            .with(Modify::new(Columns::new(1..=1)).with(Alignment::right()));
+        if !reviewers.is_empty() {
+            let reviews: Vec<Review> = reviewers
+                .par_iter()
+                .map(|(commits, author)| Review {
+                    author: author.to_string(),
+                    commits: *commits,
+                })
+                .collect::<_>();
 
-        println!("\n{table}");
+            let mut table = Table::new(reviews);
+            table
+                .with(Style::empty())
+                .with(Modify::new(Columns::new(1..=1)).with(Alignment::right()));
+
+            println!("\n{table}");
+        }
     }
 
     Ok(())
