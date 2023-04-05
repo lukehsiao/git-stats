@@ -1,3 +1,19 @@
+## 0.1.7 - 2023-04-05
+
+### Build and Dependencies
+- (deps) Update cargo dependencies
+
+### Documentation
+- (README) Update readme to include reviewed/tested
+
+### Refactor
+- Gate reviewer/tester stats behind flag
+
+See the commits here: [0.1.7]
+
+[0.1.7]: https://github.com/lukehsiao/git-stats/compare/v0.1.6...v0.1.7
+
+
 ## 0.1.6 - 2023-01-05
 
 ### Features
