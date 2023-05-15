@@ -3,7 +3,10 @@ use std::str::FromStr;
 use anyhow::{bail, Result};
 use clap::Parser;
 use rayon::prelude::*;
-use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
+use tabled::{
+    settings::{object::Columns, Alignment, Modify, Style},
+    Table, Tabled,
+};
 
 use xshell::{cmd, Shell};
 
