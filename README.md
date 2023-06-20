@@ -2,11 +2,18 @@
     📊<br>
     git stats
 </h1>
-
 <div align="center">
     <strong>A small script to get more thorough shortlog stats.</strong>
 </div>
 <br>
+<div align="center">
+  <a href="https://github.com/lukehsiao/git-stats/actions/workflows/general.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/lukehsiao/git-stats/general.yml" alt="Build Status"></a>
+  <a href="https://crates.io/crates/git-stats">
+    <img src="https://img.shields.io/crates/v/git-stats" alt="Version">
+  </a>
+  <img src="https://img.shields.io/crates/l/git-stats" alt="License">
+</div>
 <br>
 
 Git Stats parses shortlog information to get stats about the files changed, additions, and
