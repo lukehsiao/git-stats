@@ -6,7 +6,7 @@ authors = ["Luke Hsiao <luke@hsiao.dev>"]
 description = "A script for grabbing more thorough shortlog stats"
 repository = "https://github.com/lukehsiao/git-stats"
 homepage = "https://github.com/lukehsiao/git-stats"
-license = "MIT OR Apache-2.0"
+license = "BlueOak-1.0.0"
 keywords = ["git", "stats"]
 categories = ["command-line-utilities"]
 
