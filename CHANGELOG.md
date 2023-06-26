@@ -1,3 +1,21 @@
+## 0.1.8 - 2023-06-26
+
+This release essentially just relicenses to BlueOak-1.0.0.
+
+### CI/CD
+- Add github ci workflows
+
+### Documentation
+- (README) Add badges
+
+### Miscellaneous Tasks
+- Relicense to `BlueOak-1.0.0`
+
+See the commits here: [0.1.8]
+
+[0.1.8]: https://github.com/lukehsiao/git-stats/compare/v0.1.7...v0.1.8
+
+
 ## 0.1.7 - 2023-04-05
 
 ### Build and Dependencies
