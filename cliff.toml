@@ -8,7 +8,7 @@ header = """
 # https://tera.netlify.app/docs/#introduction
 body = """
 {% if version -%}
-    ## {{ version | trim_start_matches(pat="v") }} - {{ timestamp | date(format="%Y-%m-%d") }}
+    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
 {% else -%}
     ## [Unreleased]
 {%- endif %}
@@ -25,7 +25,6 @@ body = """
         {% endif -%}
     {% endfor %}
 {% endfor -%}
-See the commits here: [{{ version | trim_start_matches(pat="v") }}]
 {% if previous.version %}
     {% if version -%}
         [{{ version | trim_start_matches(pat="v") }}]: https://github.com/lukehsiao/git-stats/compare/{{ previous.version }}...{{ version }}
