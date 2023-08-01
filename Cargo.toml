@@ -16,5 +16,5 @@ categories = ["command-line-utilities"]
 anyhow = "1.0.71"
 clap = { version = "4.3.10", features = ["wrap_help", "derive"] }
 rayon = "1.7.0"
-tabled = "0.12.2"
+tabled = "0.13.0"
 xshell = "0.2.3"
