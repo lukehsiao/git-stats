@@ -12,7 +12,9 @@
   <a href="https://crates.io/crates/git-stats">
     <img src="https://img.shields.io/crates/v/git-stats" alt="Version">
   </a>
-  <img src="https://img.shields.io/crates/l/git-stats" alt="License">
+  <a href="https://github.com/lukehsiao/git-stats/blob/main/LICENSE">
+    <img src="https://img.shields.io/crates/l/git-stats" alt="License">
+  </a>
 </div>
 <br>
 
@@ -25,7 +27,6 @@ deletions. For example:
 
      Reviewer/Tester  Commits
      Luke Hsiao             1
-
 
 ## Install
 
