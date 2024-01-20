@@ -7,10 +7,11 @@ All notable changes to this project will be documented in this file. See [conven
 
 ### Documentation
 
+- **(CHANGELOG)** add entry for v0.1.9 - ([cef37bf](https://github.com/lukehsiao/git-stats/commit/cef37bf01f3e7fccd659f00a897f0167ec93baee)) - Luke Hsiao
 - **(README)** link license badge to license - ([57d4d74](https://github.com/lukehsiao/git-stats/commit/57d4d744e9d21c1c05d30558203b71eed969d01d)) - Luke Hsiao
 
 ---
-## [0.1.8](https://github.com/lukehsiao/git-stats/compare/v0.1.7..vv0.1.8) - 2023-06-26
+## [0.1.8](https://github.com/lukehsiao/git-stats/compare/v0.1.7..v0.1.8) - 2023-06-26
 
 ### Documentation
 
@@ -18,7 +19,7 @@ All notable changes to this project will be documented in this file. See [conven
 - **(README)** add badges - ([ab759f7](https://github.com/lukehsiao/git-stats/commit/ab759f794b4c9be75f08b8b927c37e2f00f8d3e2)) - Luke Hsiao
 
 ---
-## [0.1.7](https://github.com/lukehsiao/git-stats/compare/v0.1.6..vv0.1.7) - 2023-04-05
+## [0.1.7](https://github.com/lukehsiao/git-stats/compare/v0.1.6..v0.1.7) - 2023-04-05
 
 ### Documentation
 
@@ -30,7 +31,7 @@ All notable changes to this project will be documented in this file. See [conven
 - gate reviewer/tester stats behind flag - ([328a600](https://github.com/lukehsiao/git-stats/commit/328a60091795562e4624362de3a1f5eec2bea3b4)) - Luke Hsiao
 
 ---
-## [0.1.6](https://github.com/lukehsiao/git-stats/compare/v0.1.5..vv0.1.6) - 2023-01-21
+## [0.1.6](https://github.com/lukehsiao/git-stats/compare/v0.1.5..v0.1.6) - 2023-01-21
 
 ### Documentation
 
@@ -45,7 +46,7 @@ All notable changes to this project will be documented in this file. See [conven
 - add `Δ` in the `Net` column header - ([6369d04](https://github.com/lukehsiao/git-stats/commit/6369d04eb0737aa063b15fb461b6885c6d980591)) - Luke Hsiao
 
 ---
-## [0.1.5](https://github.com/lukehsiao/git-stats/compare/v0.1.4..vv0.1.5) - 2022-11-23
+## [0.1.5](https://github.com/lukehsiao/git-stats/compare/v0.1.4..v0.1.5) - 2022-11-23
 
 ### Documentation
 
@@ -57,7 +58,7 @@ All notable changes to this project will be documented in this file. See [conven
 - add net change column to output - ([a90377a](https://github.com/lukehsiao/git-stats/commit/a90377a537644b07ba689e7d7f9579d8120f7916)) - Luke Hsiao
 
 ---
-## [0.1.4](https://github.com/lukehsiao/git-stats/compare/v0.1.3..vv0.1.4) - 2022-10-29
+## [0.1.4](https://github.com/lukehsiao/git-stats/compare/v0.1.3..v0.1.4) - 2022-10-29
 
 ### Documentation
 
@@ -69,7 +70,7 @@ All notable changes to this project will be documented in this file. See [conven
 - remove unused verbosity flag and deps - ([b5de2e3](https://github.com/lukehsiao/git-stats/commit/b5de2e354c3de6836fdecbb40839bd5be61ccff1)) - Luke Hsiao
 
 ---
-## [0.1.3](https://github.com/lukehsiao/git-stats/compare/v0.1.2..vv0.1.3) - 2022-10-29
+## [0.1.3](https://github.com/lukehsiao/git-stats/compare/v0.1.2..v0.1.3) - 2022-10-29
 
 ### Documentation
 
@@ -85,7 +86,7 @@ All notable changes to this project will be documented in this file. See [conven
 - improve help text for revision-range, default to HEAD - ([6bf71a0](https://github.com/lukehsiao/git-stats/commit/6bf71a03099a489e71acc27e60b918087f6a6ab4)) - Luke Hsiao
 
 ---
-## [0.1.2](https://github.com/lukehsiao/git-stats/compare/v0.1.1..vv0.1.2) - 2022-10-27
+## [0.1.2](https://github.com/lukehsiao/git-stats/compare/v0.1.1..v0.1.2) - 2022-10-27
 
 ### Documentation
 
@@ -96,7 +97,7 @@ All notable changes to this project will be documented in this file. See [conven
 - parallelize stat collection with rayon - ([e6783b4](https://github.com/lukehsiao/git-stats/commit/e6783b458920d64fd18a5062fe545970f76ae765)) - Luke Hsiao
 
 ---
-## [0.1.1](https://github.com/lukehsiao/git-stats/compare/v0.1.0..vv0.1.1) - 2022-10-26
+## [0.1.1](https://github.com/lukehsiao/git-stats/compare/v0.1.0..v0.1.1) - 2022-10-26
 
 ### Bug Fixes
 
@@ -112,3 +113,4 @@ All notable changes to this project will be documented in this file. See [conven
 ### Features
 
 - initial implementation - ([68b516c](https://github.com/lukehsiao/git-stats/commit/68b516cd46b011af8cbba2c63a5b0c50b60bdaa8)) - Luke Hsiao
+
