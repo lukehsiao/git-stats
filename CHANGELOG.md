@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.1.13](https://github.com/lukehsiao/git-stats/compare/v0.1.12..v0.1.13) - 2024-04-19
+
+### Refactor
+
+- don't right-align "Total" - ([1f80584](https://github.com/lukehsiao/git-stats/commit/1f805843d60da3da8429229188b331ca54f385d8)) - Luke Hsiao
+
+---
 ## [0.1.12](https://github.com/lukehsiao/git-stats/compare/v0.1.11..v0.1.12) - 2024-04-19
 
 ### Refactor
