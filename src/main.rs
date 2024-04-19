@@ -11,7 +11,7 @@ use tabled::{
     },
     Table, Tabled,
 };
-use yansi::Paint;
+use yansi::{Condition, Paint};
 
 use xshell::{cmd, Shell};
 
@@ -84,6 +84,18 @@ fn display_net(o: &i64) -> String {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let sh = Shell::new()?;
+
+    yansi::whenever(Condition::STDOUT_IS_TTY);
+
+    // On each styling, check if we have TTYs.
+    yansi::whenever(Condition::STDOUTERR_ARE_TTY_LIVE);
+    // Check `NO_COLOR`, `CLICOLOR`, and if we have TTYs.
+    const HAVE_COLOR: Condition = Condition(|| {
+        std::env::var_os("NO_COLOR").is_none()
+            && (Condition::CLICOLOR_LIVE)()
+            && Condition::stdouterr_are_tty_live()
+    });
+    yansi::whenever(Condition::cached((HAVE_COLOR)()));
 
     let rev_range = cli.rev_range;
     let raw_shortlog = if cli.email {
@@ -169,6 +181,10 @@ fn main() -> Result<()> {
             .with(Style::empty())
             .modify(Columns::new(1..=5), Alignment::right())
             .modify(Rows::last(), Alignment::right())
+            .modify(
+                Rows::first(),
+                Format::content(|s| s.bold().underline().to_string()),
+            )
             .modify(Rows::last(), Format::content(|s| s.bold().to_string()));
 
         println!("{table}");
