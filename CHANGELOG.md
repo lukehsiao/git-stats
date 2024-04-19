@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.1.11](https://github.com/lukehsiao/git-stats/compare/v0.1.10..v0.1.11) - 2024-04-19
+
+### Features
+
+- improve styling, and disable if not interactive - ([d5a6209](https://github.com/lukehsiao/git-stats/commit/d5a6209838bdf7e3def54c0919c5e0105aa73bc6)) - Luke Hsiao
+
+---
 ## [0.1.10](https://github.com/lukehsiao/git-stats/compare/v0.1.9..v0.1.10) - 2024-04-19
 
 ### Features
