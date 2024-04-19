@@ -18,20 +18,22 @@
 </div>
 <br>
 
-Git Stats parses shortlog information to get stats about the files changed, additions, and
-deletions. For example:
+Git Stats parses [shortlog](https://git-scm.com/docs/git-shortlog) information to get stats about the files changed, additions, and deletions.
+For example:
 
     $ git stats -r origin..HEAD
-     Author      Commits  Changed Files  Insertions  Deletions  Net Δ
-     Luke Hsiao       30             50       +1324       -166  +1158
+      Author           Commits  Changed Files  Insertions  Deletions  Net Δ
+      Luke Hsiao            55             95       +2395      -1052  +1343
+      dependabot[bot]       31             62        +203       -267    -64
+                Total       86            157       +2598      -1319  +1279
 
-     Reviewer/Tester  Commits
-     Luke Hsiao             1
+      Reviewer/Tester  Commits
+      Luke Hsiao             1
 
 ## Install
 
-This is a glorified shell script. As such, it expects that you have `git` installed on your machine
-and in your `$PATH`.
+This is a glorified shell script.
+As such, it expects that you have `git` installed on your machine and in your `$PATH`.
 
 ### From crates.io
 

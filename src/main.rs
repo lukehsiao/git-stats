@@ -4,9 +4,14 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use rayon::prelude::*;
 use tabled::{
-    settings::{object::Columns, Alignment, Modify, Style},
+    settings::{
+        format::Format,
+        object::{Columns, Rows},
+        Alignment, Modify, Style,
+    },
     Table, Tabled,
 };
+use yansi::Paint;
 
 use xshell::{cmd, Shell};
 
@@ -98,7 +103,7 @@ fn main() -> Result<()> {
         .collect::<_>();
 
     if !shortlog.is_empty() {
-        let stats: Vec<Stat> = shortlog
+        let mut stats: Vec<Stat> = shortlog
             .par_iter()
             .map(|(commits, author)| {
                 let sh = Shell::new()?;
@@ -138,10 +143,33 @@ fn main() -> Result<()> {
             .filter_map(|r| r.ok())
             .collect::<_>();
 
+        // Collect totals
+        let totals = stats.iter().fold(
+            Stat {
+                author: "Total".to_string(),
+                commits: 0,
+                num_files: 0,
+                insertions: 0,
+                deletions: 0,
+                net: 0,
+            },
+            |acc, s| Stat {
+                author: acc.author,
+                commits: acc.commits + s.commits,
+                num_files: acc.num_files + s.num_files,
+                insertions: acc.insertions + s.insertions,
+                deletions: acc.deletions + s.deletions,
+                net: acc.net + s.net,
+            },
+        );
+        stats.push(totals);
+
         let mut table = Table::new(stats);
         table
             .with(Style::empty())
-            .with(Modify::new(Columns::new(1..=5)).with(Alignment::right()));
+            .modify(Columns::new(1..=5), Alignment::right())
+            .modify(Rows::last(), Alignment::right())
+            .modify(Rows::last(), Format::content(|s| s.bold().to_string()));
 
         println!("{table}");
     }
