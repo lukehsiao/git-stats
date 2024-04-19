@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.1.12](https://github.com/lukehsiao/git-stats/compare/v0.1.11..v0.1.12) - 2024-04-19
+
+### Refactor
+
+- remove redundant logic - ([9db509e](https://github.com/lukehsiao/git-stats/commit/9db509ece52584c8459d91131b1db2f79c63ffa2)) - Luke Hsiao
+
+---
 ## [0.1.11](https://github.com/lukehsiao/git-stats/compare/v0.1.10..v0.1.11) - 2024-04-19
 
 ### Features
