@@ -174,7 +174,6 @@ fn main() -> Result<()> {
         table
             .with(Style::empty())
             .modify(Columns::new(1..=5), Alignment::right())
-            .modify(Rows::last(), Alignment::right())
             .modify(
                 Rows::first(),
                 Format::content(|s| s.bold().underline().to_string()),
