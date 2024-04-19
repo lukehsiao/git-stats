@@ -85,15 +85,9 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let sh = Shell::new()?;
 
-    yansi::whenever(Condition::STDOUT_IS_TTY);
-
-    // On each styling, check if we have TTYs.
-    yansi::whenever(Condition::STDOUTERR_ARE_TTY_LIVE);
     // Check `NO_COLOR`, `CLICOLOR`, and if we have TTYs.
-    const HAVE_COLOR: Condition = Condition(|| {
-        std::env::var_os("NO_COLOR").is_none()
-            && (Condition::CLICOLOR_LIVE)()
-            && Condition::stdouterr_are_tty_live()
+    static HAVE_COLOR: Condition = Condition::from(|| {
+        Condition::stdout_is_tty() && Condition::clicolor() && Condition::no_color()
     });
     yansi::whenever(Condition::cached((HAVE_COLOR)()));
 
