@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.1.15](https://github.com/lukehsiao/git-stats/compare/v0.1.14..v0.1.15) - 2024-04-26
+
+### Documentation
+
+- **(README)** fix indentation of example output - ([bdc8dac](https://github.com/lukehsiao/git-stats/commit/bdc8dac79963e9f773b9e4f2d1c63094b0159b5f)) - Luke Hsiao
+
+### Performance
+
+- drop unneeded derives and sort - ([9766ad4](https://github.com/lukehsiao/git-stats/commit/9766ad42503474ffe80f9f66743bc80232eabb34)) - Luke Hsiao
+
+---
 ## [0.1.14](https://github.com/lukehsiao/git-stats/compare/v0.1.13..v0.1.14) - 2024-04-26
 
 ### Documentation
