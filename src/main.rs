@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use anyhow::{bail, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use rayon::prelude::*;
 use tabled::{
     settings::{
@@ -33,6 +33,28 @@ struct Cli {
     /// Show who reviewed/tested commits based on `Acked-by`, `Tested-by`, and
     /// `Reviewed-by` git trailers.
     reviews: bool,
+    /// What column to sort by
+    #[arg(short, long, value_enum, default_value_t = SortBy::Commits)]
+    sort: SortBy,
+    /// Whether to reverse the sorting from descending to ascending
+    #[arg(long)]
+    reverse: bool,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum SortBy {
+    /// Sort by author alphabetic order
+    Author,
+    /// Sort by number of commits
+    Commits,
+    /// Sort by number of files touched
+    Files,
+    /// Sort by number of insertions
+    Insertions,
+    /// Sort by number of deletions
+    Deletions,
+    /// Sort by net lines of change
+    Net,
 }
 
 #[derive(Tabled)]
@@ -148,6 +170,18 @@ fn main() -> Result<()> {
             })
             .filter_map(|r| r.ok())
             .collect::<_>();
+
+        match cli.sort {
+            SortBy::Author => stats.sort_unstable_by(|a, b| b.author.cmp(&a.author)),
+            SortBy::Commits => stats.sort_unstable_by(|a, b| b.commits.cmp(&a.commits)),
+            SortBy::Files => stats.sort_unstable_by(|a, b| b.num_files.cmp(&a.num_files)),
+            SortBy::Insertions => stats.sort_unstable_by(|a, b| b.insertions.cmp(&a.insertions)),
+            SortBy::Deletions => stats.sort_unstable_by(|a, b| b.deletions.cmp(&a.deletions)),
+            SortBy::Net => stats.sort_unstable_by(|a, b| b.net.cmp(&a.net)),
+        }
+        if cli.reverse {
+            stats.reverse()
+        }
 
         // Collect totals
         let totals = stats.iter().fold(
