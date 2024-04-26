@@ -41,7 +41,7 @@ struct Cli {
     reverse: bool,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+#[derive(Clone, ValueEnum)]
 enum SortBy {
     /// Sort by author alphabetic order
     Author,
@@ -173,7 +173,7 @@ fn main() -> Result<()> {
 
         match cli.sort {
             SortBy::Author => stats.sort_unstable_by(|a, b| b.author.cmp(&a.author)),
-            SortBy::Commits => stats.sort_unstable_by(|a, b| b.commits.cmp(&a.commits)),
+            SortBy::Commits => (), // It's already sorted by commits
             SortBy::Files => stats.sort_unstable_by(|a, b| b.num_files.cmp(&a.num_files)),
             SortBy::Insertions => stats.sort_unstable_by(|a, b| b.insertions.cmp(&a.insertions)),
             SortBy::Deletions => stats.sort_unstable_by(|a, b| b.deletions.cmp(&a.deletions)),
