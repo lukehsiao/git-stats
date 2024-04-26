@@ -3,7 +3,7 @@
     git stats
 </h1>
 <div align="center">
-    <strong>A small script to get more thorough shortlog stats.</strong>
+    <strong>A tool for getting aggregated shortlog stats.</strong>
 </div>
 <br>
 <div align="center">
@@ -44,7 +44,7 @@ cargo install git-stats --locked
 ## Usage
 
 ```
-A script for grabbing more thorough shortlog stats
+A tool for getting aggregated shortlog stats
 
 Usage: git-stats [OPTIONS] [revision-range]
 
