@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.1.14](https://github.com/lukehsiao/git-stats/compare/v0.1.13..v0.1.14) - 2024-04-26
+
+### Documentation
+
+- **(README)** update alignment of output - ([960f18e](https://github.com/lukehsiao/git-stats/commit/960f18e1f68af5b4b4b3096b13f4e98913a895c6)) - Luke Hsiao
+
+### Features
+
+- allow sorting by other columns - ([627d3f0](https://github.com/lukehsiao/git-stats/commit/627d3f09dd596ae862fe3a4de57bcd74d3b94847)) - Luke Hsiao
+
+---
 ## [0.1.13](https://github.com/lukehsiao/git-stats/compare/v0.1.12..v0.1.13) - 2024-04-19
 
 ### Refactor
