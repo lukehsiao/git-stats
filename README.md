@@ -8,7 +8,8 @@
 <br>
 <div align="center">
   <a href="https://github.com/lukehsiao/git-stats/actions/workflows/general.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/lukehsiao/git-stats/general.yml" alt="Build Status"></a>
+    <img src="https://img.shields.io/github/actions/workflow/status/lukehsiao/git-stats/general.yml" alt="Build Status">
+  </a>
   <a href="https://crates.io/crates/git-stats">
     <img src="https://img.shields.io/crates/v/git-stats" alt="Version">
   </a>
