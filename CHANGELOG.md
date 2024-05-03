@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.1.16](https://github.com/lukehsiao/git-stats/compare/v0.1.15..v0.1.16) - 2024-05-03
+
+### Features
+
+- support `--author` flag for git-shortlog - ([ed80049](https://github.com/lukehsiao/git-stats/commit/ed800491c5bcc52fc354445dab9634ca0ca641b3)) - Luke Hsiao
+
+---
 ## [0.1.15](https://github.com/lukehsiao/git-stats/compare/v0.1.14..v0.1.15) - 2024-04-26
 
 ### Documentation
