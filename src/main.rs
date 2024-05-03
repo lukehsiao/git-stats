@@ -39,6 +39,12 @@ struct Cli {
     /// Whether to reverse the sorting from descending to ascending
     #[arg(long)]
     reverse: bool,
+    /// Limit the commits output to ones with author header lines that match the specified pattern (regular expression).
+    ///
+    /// With more than one --author=<pattern>, commits whose author matches any of the given patterns are chosen.
+    /// This is pased through as `--author` to `git shortlog`.
+    #[arg(short, long)]
+    author: Option<Vec<String>>,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -113,12 +119,24 @@ fn main() -> Result<()> {
     });
     yansi::whenever(Condition::cached((HAVE_COLOR)()));
 
+    // Build up the command based on flags
     let rev_range = cli.rev_range;
-    let raw_shortlog = if cli.email {
-        cmd!(sh, "git shortlog -sen {rev_range}").read()?
-    } else {
-        cmd!(sh, "git shortlog -sn {rev_range}").read()?
-    };
+    let author = cli.author.map(|authors| {
+        authors
+            .iter()
+            .map(|a| format!("--author={}", a))
+            .collect::<Vec<String>>()
+    });
+    let mut cmd = cmd!(sh, "git shortlog -sn");
+    if cli.email {
+        cmd = cmd.arg("-e")
+    }
+    if let Some(a) = author {
+        cmd = cmd.args(a);
+    }
+    cmd = cmd.arg(&rev_range);
+
+    let raw_shortlog = cmd.read()?;
 
     let shortlog: Vec<(usize, &str)> = raw_shortlog
         .lines()

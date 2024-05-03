@@ -53,10 +53,11 @@ Arguments:
   [revision-range]  Show only commits in the specified revision range [default: HEAD]
 
 Options:
-  -e, --email        Show the email address of each author
-  -r, --reviews      Show who reviewed/tested commits based on `Acked-by`, `Tested-by`, and `Reviewed-by` git trailers
-  -s, --sort <SORT>  What column to sort by [default: commits] [possible values: author, commits, files, insertions, deletions, net]
-      --reverse      Whether to reverse the sorting from descending to ascending
-  -h, --help         Print help (see more with '--help')
-  -V, --version      Print version
-  ```
+  -e, --email            Show the email address of each author
+  -r, --reviews          Show who reviewed/tested commits based on `Acked-by`, `Tested-by`, and `Reviewed-by` git trailers
+  -s, --sort <SORT>      What column to sort by [default: commits] [possible values: author, commits, files, insertions, deletions, net]
+      --reverse          Whether to reverse the sorting from descending to ascending
+  -a, --author <AUTHOR>  Limit the commits output to ones with author header lines that match the specified pattern (regular expression)
+  -h, --help             Print help (see more with '--help')
+  -V, --version          Print version
+```
