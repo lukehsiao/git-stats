@@ -3,7 +3,7 @@
     git stats
 </h1>
 <div align="center">
-    <strong>A tool for getting aggregated shortlog stats.</strong>
+    <strong>A tool for getting aggregated commit stats.</strong>
 </div>
 <br>
 <div align="center">
@@ -19,7 +19,7 @@
 </div>
 <br>
 
-Git Stats parses [shortlog](https://git-scm.com/docs/git-shortlog) information to get stats about the files changed, additions, and deletions.
+Git Stats parses [log](https://git-scm.com/docs/git-log) information to get stats about the files changed, additions, and deletions.
 For example:
 
     $ git stats -r origin..HEAD
@@ -45,7 +45,7 @@ cargo install git-stats --locked
 ## Usage
 
 ```
-A tool for getting aggregated shortlog stats
+A tool for getting aggregated commit stats
 
 Usage: git-stats [OPTIONS] [revision-range]
 

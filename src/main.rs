@@ -42,7 +42,7 @@ struct Cli {
     /// Limit the commits output to ones with author header lines that match the specified pattern (regular expression).
     ///
     /// With more than one --author=<pattern>, commits whose author matches any of the given patterns are chosen.
-    /// This is pased through as `--author` to `git shortlog`.
+    /// This is pased through as `--author` to `git log`.
     #[arg(short, long)]
     author: Option<Vec<String>>,
 }
