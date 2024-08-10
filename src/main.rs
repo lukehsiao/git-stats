@@ -127,21 +127,25 @@ fn main() -> Result<()> {
             .map(|a| format!("--author={}", a))
             .collect::<Vec<String>>()
     });
-    let mut cmd = cmd!(sh, "git shortlog -sn");
-    if cli.email {
-        cmd = cmd.arg("-e")
-    }
+    let mut log_cmd = if cli.email {
+        "git log --format='%aN <%aE>' ".to_string()
+    } else {
+        "git log --format='%aN' ".to_string()
+    };
     if let Some(a) = author {
-        cmd = cmd.args(a);
+        log_cmd.push_str(&a.join(" "));
     }
-    cmd = cmd.arg(&rev_range);
+    log_cmd.push(' ');
+    log_cmd.push_str(&rev_range);
+    log_cmd.push_str(" | sort | uniq -c | sort -nr");
 
+    let cmd = cmd!(sh, "bash -c {log_cmd}");
     let raw_shortlog = cmd.read()?;
 
     let shortlog: Vec<(usize, &str)> = raw_shortlog
         .lines()
         .map(|line| {
-            let chunks = line.trim().split_once('\t').unwrap();
+            let chunks = line.trim().split_once(' ').unwrap();
             let commits = usize::from_str(chunks.0).unwrap();
             let author = chunks.1;
             (commits, author)

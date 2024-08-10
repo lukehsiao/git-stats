@@ -34,7 +34,7 @@ For example:
 ## Install
 
 This is a glorified shell script.
-As such, it expects that you have `git` installed on your machine and in your `$PATH`.
+As such, it expects that you have `git`, `sort`, and `uniq` installed on your machine and in your `$PATH`.
 
 ### From crates.io
 
