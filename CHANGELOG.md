@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.1.17](https://github.com/lukehsiao/git-stats/compare/v0.1.16..v0.1.17) - 2024-08-10
+
+This release fixes a significant flaw with how `--author` behaved, which caused authors and commits to be lower than expected, or missed entirely.
+**I strongly recommend you upgrade.**
+
+This patch switches from using `git shortlog` to `git log` when collecting the set of authors to compute stats on.
+
+There is a bug with `git` itself when providing the `--author` flag.
+Specifically, the behavior of `git log` and `git shortlog` behave differently when dealing with author filters that also are affected by `.mailmap`.
+`git log` appears to apply the filter AFTER applying `.mailmap`, whereas
+`git shortlog` appears to do it BEFORE.
+
+### Bug Fixes
+
+- use `log`, not `shortlog` for proper `--author` support - ([654a7b4](https://github.com/lukehsiao/git-stats/commit/654a7b46669ce5e17614bb42e7335a7a099ea94b)) - Luke Hsiao
+
+---
 ## [0.1.16](https://github.com/lukehsiao/git-stats/compare/v0.1.15..v0.1.16) - 2024-05-03
 
 ### Features
