@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.1.18](https://github.com/lukehsiao/git-stats/compare/v0.1.17..v0.1.18) - 2024-10-01
+
+This is a minor refactor.
+As part of fixing clippy's pedantic lints, there should be slight performance improvments.
+
+### Refactor
+
+- fix clippy pedantic lints - ([ec15965](https://github.com/lukehsiao/git-stats/commit/ec15965c6b87df25cfd2496944a9e3cd7b676bab)) - Luke Hsiao
+
+### Build and Dependencies
+
+- **(deps)** bump clap from 4.5.15 to 4.5.16 - ([3c03f20](https://github.com/lukehsiao/git-stats/commit/3c03f20b5336aa592773087e3fc2a156d8f6cd1d)) - dependabot[bot]
+- **(deps)** bump tabled from 0.15.0 to 0.16.0 - ([8645b3b](https://github.com/lukehsiao/git-stats/commit/8645b3be6930684ca7298b6dacc567b939fe087a)) - dependabot[bot]
+- **(deps)** bump clap from 4.5.16 to 4.5.18 - ([641dce5](https://github.com/lukehsiao/git-stats/commit/641dce557c8ec4be2c250a332b4442bf8a7b8b09)) - dependabot[bot]
+- **(deps)** bump anyhow from 1.0.86 to 1.0.89 - ([8f21b1c](https://github.com/lukehsiao/git-stats/commit/8f21b1c82ccff8ec0f3ad18d18d2554f27143e16)) - dependabot[bot]
+
+---
 ## [0.1.17](https://github.com/lukehsiao/git-stats/compare/v0.1.16..v0.1.17) - 2024-08-10
 
 This release fixes a significant flaw with how `--author` behaved, which caused authors and commits to be lower than expected, or missed entirely.
