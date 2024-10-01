@@ -87,44 +87,48 @@ struct Review {
     commits: usize,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn display_del(o: &usize) -> String {
     match o {
         0 => format!("{}", 0),
-        n => format!("-{}", n),
+        n => format!("-{n}"),
     }
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn display_add(o: &usize) -> String {
     match o {
         0 => format!("{}", 0),
-        n => format!("+{}", n),
+        n => format!("+{n}"),
     }
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn display_net(o: &i64) -> String {
     match o {
-        n if *n > 0 => format!("+{}", n),
-        n if *n <= 0 => format!("{}", n),
+        n if *n > 0 => format!("+{n}"),
+        n if *n <= 0 => format!("{n}"),
         _ => todo!(),
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
-    let cli = Cli::parse();
-    let sh = Shell::new()?;
-
     // Check `NO_COLOR`, `CLICOLOR`, and if we have TTYs.
     static HAVE_COLOR: Condition = Condition::from(|| {
         Condition::stdout_is_tty() && Condition::clicolor() && Condition::no_color()
     });
     yansi::whenever(Condition::cached((HAVE_COLOR)()));
 
+    let cli = Cli::parse();
+    let sh = Shell::new()?;
+
     // Build up the command based on flags
     let rev_range = cli.rev_range;
     let author = cli.author.map(|authors| {
         authors
             .iter()
-            .map(|a| format!("--author={}", a))
+            .map(|a| format!("--author={a}"))
             .collect::<Vec<String>>()
     });
     let mut log_cmd = if cli.email {
@@ -182,15 +186,16 @@ fn main() -> Result<()> {
                     num_files += 1;
                 }
                 Ok(Stat {
-                    author: author.to_string(),
+                    author: (*author).to_string(),
                     commits: *commits,
                     num_files,
                     insertions,
                     deletions,
-                    net: insertions as i64 - deletions as i64,
+                    net: i64::try_from(insertions).expect("insertions out of range")
+                        - i64::try_from(deletions).expect("deletions out of range"),
                 })
             })
-            .filter_map(|r| r.ok())
+            .filter_map(std::result::Result::ok)
             .collect::<_>();
 
         match cli.sort {
@@ -202,7 +207,7 @@ fn main() -> Result<()> {
             SortBy::Net => stats.sort_unstable_by(|a, b| b.net.cmp(&a.net)),
         }
         if cli.reverse {
-            stats.reverse()
+            stats.reverse();
         }
 
         // Collect totals
@@ -259,7 +264,7 @@ fn main() -> Result<()> {
             let reviews: Vec<Review> = reviewers
                 .par_iter()
                 .map(|(commits, author)| Review {
-                    author: author.to_string(),
+                    author: (*author).to_string(),
                     commits: *commits,
                 })
                 .collect::<_>();
@@ -282,6 +287,6 @@ mod test {
     #[test]
     fn verify_app() {
         use clap::CommandFactory;
-        Cli::command().debug_assert()
+        Cli::command().debug_assert();
     }
 }
