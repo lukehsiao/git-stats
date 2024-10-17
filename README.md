@@ -13,7 +13,7 @@
   <a href="https://crates.io/crates/git-stats">
     <img src="https://img.shields.io/crates/v/git-stats" alt="Version">
   </a>
-  <a href="https://github.com/lukehsiao/git-stats/blob/main/LICENSE">
+  <a href="https://github.com/lukehsiao/git-stats/blob/main/LICENSE.md">
     <img src="https://img.shields.io/crates/l/git-stats" alt="License">
   </a>
 </div>
