@@ -17,5 +17,5 @@ anyhow = "1.0.92"
 clap = { version = "4.5.21", features = ["wrap_help", "derive"] }
 rayon = "1.10.0"
 tabled = { version = "0.17.0", features = ["ansi"] }
-xshell = "0.2.6"
+xshell = "0.2.7"
 yansi = { version = "1.0.1", features = ["detect-tty", "detect-env"] }
