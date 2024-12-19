@@ -58,6 +58,13 @@ Options:
   -s, --sort <SORT>      What column to sort by [default: commits] [possible values: author, commits, files, insertions, deletions, net]
       --reverse          Whether to reverse the sorting from descending to ascending
   -a, --author <AUTHOR>  Limit the commits output to ones with author header lines that match the specified pattern (regular expression)
+      --since <SINCE>    Limit the commits output to ones more recent than a specific date
+      --until <UNTIL>    Limit the commits output to ones older than a specific date
   -h, --help             Print help (see more with '--help')
   -V, --version          Print version
 ```
+
+
+## TODO
+
+- [] It would be nice to support _all_ git log flags automatically, just passing them through directly and then doing the math only.

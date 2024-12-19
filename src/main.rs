@@ -45,6 +45,16 @@ struct Cli {
     /// This is pased through as `--author` to `git log`.
     #[arg(short, long)]
     author: Option<Vec<String>>,
+    /// Limit the commits output to ones more recent than a specific date.
+    ///
+    /// This is pased directly through as `--since` to `git log`.
+    #[arg(long)]
+    since: Option<String>,
+    /// Limit the commits output to ones older than a specific date.
+    ///
+    /// This is pased directly through as `--until` to `git log`.
+    #[arg(long)]
+    until: Option<String>,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -139,7 +149,12 @@ fn main() -> Result<()> {
     if let Some(a) = author {
         log_cmd.push_str(&a.join(" "));
     }
-    log_cmd.push(' ');
+    if let Some(since) = &cli.since {
+        log_cmd.push_str(&format!("--since={since} "));
+    }
+    if let Some(until) = &cli.until {
+        log_cmd.push_str(&format!("--until={until} "));
+    }
     log_cmd.push_str(&rev_range);
     log_cmd.push_str(" | sort | uniq -c | sort -nr");
 
@@ -161,11 +176,16 @@ fn main() -> Result<()> {
             .par_iter()
             .map(|(commits, author)| {
                 let sh = Shell::new()?;
-                let raw_stats = cmd!(
-                    sh,
-                    "git log -F --author={author} --pretty=tformat: --numstat {rev_range}"
-                )
-                .read()?;
+                let mut individual_log_cmd =
+                    format!("git log -F --author=\"{author}\" --pretty=tformat: --numstat ");
+                if let Some(since) = &cli.since {
+                    individual_log_cmd.push_str(&format!("--since={since} "));
+                }
+                if let Some(until) = &cli.until {
+                    individual_log_cmd.push_str(&format!("--until={until} "));
+                }
+                individual_log_cmd.push_str(&rev_range);
+                let raw_stats = cmd!(sh, "bash -c {individual_log_cmd}").read()?;
                 let mut insertions = 0;
                 let mut deletions = 0;
                 let mut num_files = 0;
