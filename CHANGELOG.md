@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.1.19](https://github.com/lukehsiao/git-stats/compare/v0.1.18..v0.1.19) - 2024-12-19
+
+### Features
+
+- support `--since` and `--until` filters for git log - ([c0c1361](https://github.com/lukehsiao/git-stats/commit/c0c1361b46e8ad8bd37a70263b4a4b9ed0bb17dc)) - Luke Hsiao
+
+### Documentation
+
+- **(LICENSE)** use markdown for nicer rendering - ([de2f3fb](https://github.com/lukehsiao/git-stats/commit/de2f3fbd08808bbf4095ce7682cc79e73728aa2b)) - Luke Hsiao
+
+---
 ## [0.1.18](https://github.com/lukehsiao/git-stats/compare/v0.1.17..v0.1.18) - 2024-10-01
 
 This is a minor refactor.
