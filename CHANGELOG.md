@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.1.20](https://github.com/lukehsiao/git-stats/compare/v0.1.19..v0.1.20) - 2025-02-28
+
+### Bug Fixes
+
+- add proper spacing when using --author - ([30fb6d0](https://github.com/lukehsiao/git-stats/commit/30fb6d069b91c207959c9395ca5f37f4f5dfb7b6)) - Luke Hsiao
+
+### Build and Dependencies
+
+- **(deps)** bump clap from 4.5.23 to 4.5.27 - ([f0d95ea](https://github.com/lukehsiao/git-stats/commit/f0d95ea69a19965c7a5a0712e06590de0058fbe6)) - dependabot[bot]
+- **(deps)** bump anyhow from 1.0.94 to 1.0.96 - ([c81ca02](https://github.com/lukehsiao/git-stats/commit/c81ca022ba11a14daed50bbd2f13b270e6c778ed)) - dependabot[bot]
+- update all dependencies - ([d581c5c](https://github.com/lukehsiao/git-stats/commit/d581c5ce1fd1b0d7324e094bc1546ccf0bbfc803)) - Luke Hsiao
+
+---
 ## [0.1.19](https://github.com/lukehsiao/git-stats/compare/v0.1.18..v0.1.19) - 2024-12-19
 
 ### Features
