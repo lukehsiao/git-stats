@@ -148,6 +148,7 @@ fn main() -> Result<()> {
     };
     if let Some(a) = author {
         log_cmd.push_str(&a.join(" "));
+        log_cmd.push(' ');
     }
     if let Some(since) = &cli.since {
         log_cmd.push_str(&format!("--since={since} "));
