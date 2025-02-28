@@ -81,11 +81,11 @@ struct Stat {
     commits: usize,
     #[tabled(rename = "Changed Files")]
     num_files: usize,
-    #[tabled(rename = "Insertions", display_with = "display_add")]
+    #[tabled(rename = "Insertions", display = "display_add")]
     insertions: usize,
-    #[tabled(rename = "Deletions", display_with = "display_del")]
+    #[tabled(rename = "Deletions", display = "display_del")]
     deletions: usize,
-    #[tabled(rename = "Net Δ", display_with = "display_net")]
+    #[tabled(rename = "Net Δ", display = "display_net")]
     net: i64,
 }
 
