@@ -13,8 +13,8 @@ categories = ["command-line-utilities"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.96"
-clap = { version = "4.5.31", features = ["wrap_help", "derive"] }
+anyhow = "1.0.97"
+clap = { version = "4.5.32", features = ["wrap_help", "derive"] }
 rayon = "1.10.0"
 tabled = { version = "0.18.0", features = ["ansi"] }
 xshell = "0.2.7"
