@@ -1,19 +1,19 @@
 use std::str::FromStr;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::{Parser, ValueEnum};
 use rayon::prelude::*;
 use tabled::{
+    Table, Tabled,
     settings::{
+        Alignment, Modify, Style,
         format::Format,
         object::{Columns, Rows},
-        Alignment, Modify, Style,
     },
-    Table, Tabled,
 };
 use yansi::{Condition, Paint};
 
-use xshell::{cmd, Shell};
+use xshell::{Shell, cmd};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
