@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fmt::Write as _, str::FromStr};
 
 use anyhow::{Result, bail};
 use clap::{Parser, ValueEnum};
@@ -151,10 +151,10 @@ fn main() -> Result<()> {
         log_cmd.push(' ');
     }
     if let Some(since) = &cli.since {
-        log_cmd.push_str(&format!("--since={since} "));
+        let _ = write!(log_cmd, "--since={since} ");
     }
     if let Some(until) = &cli.until {
-        log_cmd.push_str(&format!("--until={until} "));
+        let _ = write!(log_cmd, "--until={until} ");
     }
     log_cmd.push_str(&rev_range);
     log_cmd.push_str(" | sort | uniq -c | sort -nr");
@@ -180,10 +180,10 @@ fn main() -> Result<()> {
                 let mut individual_log_cmd =
                     format!("git log -F --author=\"{author}\" --pretty=tformat: --numstat ");
                 if let Some(since) = &cli.since {
-                    individual_log_cmd.push_str(&format!("--since={since} "));
+                    let _ = write!(individual_log_cmd, "--since={since} ");
                 }
                 if let Some(until) = &cli.until {
-                    individual_log_cmd.push_str(&format!("--until={until} "));
+                    let _ = write!(individual_log_cmd, "--until={until} ");
                 }
                 individual_log_cmd.push_str(&rev_range);
                 let raw_stats = cmd!(sh, "bash -c {individual_log_cmd}").read()?;
