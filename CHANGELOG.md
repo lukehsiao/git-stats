@@ -1,6 +1,13 @@
-# Changelog
+<!-- # Changelog -->
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
+
+---
+## [0.1.21](https://github.com/lukehsiao/git-stats/compare/v0.1.20..v0.1.21) - 2026-01-07
+
+### Bug Fixes
+
+- escape author in cli arguments - ([fcd700f](https://github.com/lukehsiao/git-stats/commit/fcd700fe96784e2b315aece5e91421d69c6ead21)) - Luke Hsiao
 
 ---
 ## [0.1.20](https://github.com/lukehsiao/git-stats/compare/v0.1.19..v0.1.20) - 2025-02-28
