@@ -138,7 +138,7 @@ fn main() -> Result<()> {
     let author = cli.author.map(|authors| {
         authors
             .iter()
-            .map(|a| format!("--author={a}"))
+            .map(|a| format!("--author='{a}'"))
             .collect::<Vec<String>>()
     });
     let mut log_cmd = if cli.email {
@@ -178,7 +178,7 @@ fn main() -> Result<()> {
             .map(|(commits, author)| {
                 let sh = Shell::new()?;
                 let mut individual_log_cmd =
-                    format!("git log -F --author=\"{author}\" --pretty=tformat: --numstat ");
+                    format!("git log -F --author='{author}' --pretty=tformat: --numstat ");
                 if let Some(since) = &cli.since {
                     let _ = write!(individual_log_cmd, "--since={since} ");
                 }
