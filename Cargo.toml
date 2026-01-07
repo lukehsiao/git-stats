@@ -1,6 +1,6 @@
 [package]
 name = "git-stats"
-version = "0.1.20"
+version = "0.1.21"
 edition = "2024"
 authors = ["Luke Hsiao <luke@hsiao.dev>"]
 description = "A tool for getting aggregated commit stats"
