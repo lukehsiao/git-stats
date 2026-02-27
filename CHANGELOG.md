@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.22
+
+### Patch Changes
+
+- [`7a1196e`](https://github.com/lukehsiao/git-stats/commit/7a1196ec630e9e6dbac6057975991333e5e19fa2) Thanks [@lukehsiao](https://github.com/lukehsiao)! - Add metadata and binaries for [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall) compatibility.
+
+<pre>
+$ git-stats v0.1.21..v0.1.22
+ Author      Commits  Changed Files  Insertions  Deletions  Net Δ 
+ Luke Hsiao        3             17       +1249       -214  +1035 
+ Total             3             17       +1249       -214  +1035 
+</pre>
+
 ## [0.1.21](https://github.com/lukehsiao/git-stats/compare/v0.1.20..v0.1.21) - 2026-01-07
 
 ### Bug Fixes
@@ -7,6 +20,7 @@
 - escape author in cli arguments - ([fcd700f](https://github.com/lukehsiao/git-stats/commit/fcd700fe96784e2b315aece5e91421d69c6ead21)) - Luke Hsiao
 
 ---
+
 ## [0.1.20](https://github.com/lukehsiao/git-stats/compare/v0.1.19..v0.1.20) - 2025-02-28
 
 ### Bug Fixes
@@ -20,6 +34,7 @@
 - update all dependencies - ([d581c5c](https://github.com/lukehsiao/git-stats/commit/d581c5ce1fd1b0d7324e094bc1546ccf0bbfc803)) - Luke Hsiao
 
 ---
+
 ## [0.1.19](https://github.com/lukehsiao/git-stats/compare/v0.1.18..v0.1.19) - 2024-12-19
 
 ### Features
@@ -31,6 +46,7 @@
 - **(LICENSE)** use markdown for nicer rendering - ([de2f3fb](https://github.com/lukehsiao/git-stats/commit/de2f3fbd08808bbf4095ce7682cc79e73728aa2b)) - Luke Hsiao
 
 ---
+
 ## [0.1.18](https://github.com/lukehsiao/git-stats/compare/v0.1.17..v0.1.18) - 2024-10-01
 
 This is a minor refactor.
@@ -48,6 +64,7 @@ As part of fixing clippy's pedantic lints, there should be slight performance im
 - **(deps)** bump anyhow from 1.0.86 to 1.0.89 - ([8f21b1c](https://github.com/lukehsiao/git-stats/commit/8f21b1c82ccff8ec0f3ad18d18d2554f27143e16)) - dependabot[bot]
 
 ---
+
 ## [0.1.17](https://github.com/lukehsiao/git-stats/compare/v0.1.16..v0.1.17) - 2024-08-10
 
 This release fixes a significant flaw with how `--author` behaved, which caused authors and commits to be lower than expected, or missed entirely.
@@ -65,6 +82,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - use `log`, not `shortlog` for proper `--author` support - ([654a7b4](https://github.com/lukehsiao/git-stats/commit/654a7b46669ce5e17614bb42e7335a7a099ea94b)) - Luke Hsiao
 
 ---
+
 ## [0.1.16](https://github.com/lukehsiao/git-stats/compare/v0.1.15..v0.1.16) - 2024-05-03
 
 ### Features
@@ -72,6 +90,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - support `--author` flag for git-shortlog - ([ed80049](https://github.com/lukehsiao/git-stats/commit/ed800491c5bcc52fc354445dab9634ca0ca641b3)) - Luke Hsiao
 
 ---
+
 ## [0.1.15](https://github.com/lukehsiao/git-stats/compare/v0.1.14..v0.1.15) - 2024-04-26
 
 ### Documentation
@@ -83,6 +102,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - drop unneeded derives and sort - ([9766ad4](https://github.com/lukehsiao/git-stats/commit/9766ad42503474ffe80f9f66743bc80232eabb34)) - Luke Hsiao
 
 ---
+
 ## [0.1.14](https://github.com/lukehsiao/git-stats/compare/v0.1.13..v0.1.14) - 2024-04-26
 
 ### Documentation
@@ -94,6 +114,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - allow sorting by other columns - ([627d3f0](https://github.com/lukehsiao/git-stats/commit/627d3f09dd596ae862fe3a4de57bcd74d3b94847)) - Luke Hsiao
 
 ---
+
 ## [0.1.13](https://github.com/lukehsiao/git-stats/compare/v0.1.12..v0.1.13) - 2024-04-19
 
 ### Refactor
@@ -101,6 +122,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - don't right-align "Total" - ([1f80584](https://github.com/lukehsiao/git-stats/commit/1f805843d60da3da8429229188b331ca54f385d8)) - Luke Hsiao
 
 ---
+
 ## [0.1.12](https://github.com/lukehsiao/git-stats/compare/v0.1.11..v0.1.12) - 2024-04-19
 
 ### Refactor
@@ -108,6 +130,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - remove redundant logic - ([9db509e](https://github.com/lukehsiao/git-stats/commit/9db509ece52584c8459d91131b1db2f79c63ffa2)) - Luke Hsiao
 
 ---
+
 ## [0.1.11](https://github.com/lukehsiao/git-stats/compare/v0.1.10..v0.1.11) - 2024-04-19
 
 ### Features
@@ -115,6 +138,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - improve styling, and disable if not interactive - ([d5a6209](https://github.com/lukehsiao/git-stats/commit/d5a6209838bdf7e3def54c0919c5e0105aa73bc6)) - Luke Hsiao
 
 ---
+
 ## [0.1.10](https://github.com/lukehsiao/git-stats/compare/v0.1.9..v0.1.10) - 2024-04-19
 
 ### Features
@@ -122,6 +146,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - include totals of all statistics - ([8c1895f](https://github.com/lukehsiao/git-stats/commit/8c1895ffaaa5df998dd2b6635b8c9f221c11747a)) - Luke Hsiao
 
 ---
+
 ## [0.1.9](https://github.com/lukehsiao/git-stats/compare/v0.1.8..v0.1.9) - 2024-01-18
 
 ### Documentation
@@ -130,6 +155,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - **(README)** link license badge to license - ([57d4d74](https://github.com/lukehsiao/git-stats/commit/57d4d744e9d21c1c05d30558203b71eed969d01d)) - Luke Hsiao
 
 ---
+
 ## [0.1.8](https://github.com/lukehsiao/git-stats/compare/v0.1.7..v0.1.8) - 2023-06-26
 
 ### Documentation
@@ -138,6 +164,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - **(README)** add badges - ([ab759f7](https://github.com/lukehsiao/git-stats/commit/ab759f794b4c9be75f08b8b927c37e2f00f8d3e2)) - Luke Hsiao
 
 ---
+
 ## [0.1.7](https://github.com/lukehsiao/git-stats/compare/v0.1.6..v0.1.7) - 2023-04-05
 
 ### Documentation
@@ -150,6 +177,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - gate reviewer/tester stats behind flag - ([328a600](https://github.com/lukehsiao/git-stats/commit/328a60091795562e4624362de3a1f5eec2bea3b4)) - Luke Hsiao
 
 ---
+
 ## [0.1.6](https://github.com/lukehsiao/git-stats/compare/v0.1.5..v0.1.6) - 2023-01-21
 
 ### Documentation
@@ -165,6 +193,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - add `Δ` in the `Net` column header - ([6369d04](https://github.com/lukehsiao/git-stats/commit/6369d04eb0737aa063b15fb461b6885c6d980591)) - Luke Hsiao
 
 ---
+
 ## [0.1.5](https://github.com/lukehsiao/git-stats/compare/v0.1.4..v0.1.5) - 2022-11-23
 
 ### Documentation
@@ -177,6 +206,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - add net change column to output - ([a90377a](https://github.com/lukehsiao/git-stats/commit/a90377a537644b07ba689e7d7f9579d8120f7916)) - Luke Hsiao
 
 ---
+
 ## [0.1.4](https://github.com/lukehsiao/git-stats/compare/v0.1.3..v0.1.4) - 2022-10-29
 
 ### Documentation
@@ -189,6 +219,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - remove unused verbosity flag and deps - ([b5de2e3](https://github.com/lukehsiao/git-stats/commit/b5de2e354c3de6836fdecbb40839bd5be61ccff1)) - Luke Hsiao
 
 ---
+
 ## [0.1.3](https://github.com/lukehsiao/git-stats/compare/v0.1.2..v0.1.3) - 2022-10-29
 
 ### Documentation
@@ -205,6 +236,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - improve help text for revision-range, default to HEAD - ([6bf71a0](https://github.com/lukehsiao/git-stats/commit/6bf71a03099a489e71acc27e60b918087f6a6ab4)) - Luke Hsiao
 
 ---
+
 ## [0.1.2](https://github.com/lukehsiao/git-stats/compare/v0.1.1..v0.1.2) - 2022-10-27
 
 ### Documentation
@@ -216,6 +248,7 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - parallelize stat collection with rayon - ([e6783b4](https://github.com/lukehsiao/git-stats/commit/e6783b458920d64fd18a5062fe545970f76ae765)) - Luke Hsiao
 
 ---
+
 ## [0.1.1](https://github.com/lukehsiao/git-stats/compare/v0.1.0..v0.1.1) - 2022-10-26
 
 ### Bug Fixes
@@ -227,9 +260,9 @@ Specifically, the behavior of `git log` and `git shortlog` behave differently wh
 - **(CHANGELOG)** add entry for v0.1.1 - ([a204b5e](https://github.com/lukehsiao/git-stats/commit/a204b5e4e8c80dbafb03c462a34dc34d13c21baf)) - Luke Hsiao
 
 ---
+
 ## [0.1.0] - 2022-10-26
 
 ### Features
 
 - initial implementation - ([68b516c](https://github.com/lukehsiao/git-stats/commit/68b516cd46b011af8cbba2c63a5b0c50b60bdaa8)) - Luke Hsiao
-
