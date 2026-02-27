@@ -22,14 +22,16 @@
 Git Stats parses [log](https://git-scm.com/docs/git-log) information to get stats about the files changed, additions, and deletions.
 For example:
 
-    $ git stats -r origin..HEAD
-     Author           Commits  Changed Files  Insertions  Deletions  Net Δ
-     Luke Hsiao            67            117       +2616      -1126  +1490
-     dependabot[bot]       31             62        +203       -267    -64
-     Total                 98            179       +2819      -1393  +1426
+```
+$ git stats -r origin..HEAD
+Author           Commits  Changed Files  Insertions  Deletions  Net Δ
+Luke Hsiao            67            117       +2616      -1126  +1490
+dependabot[bot]       31             62        +203       -267    -64
+Total                 98            179       +2819      -1393  +1426
 
-     Reviewer/Tester  Commits
-     Luke Hsiao             1
+Reviewer/Tester  Commits
+Luke Hsiao             1
+```
 
 ## Install
 
@@ -73,4 +75,4 @@ Options:
 
 ## TODO
 
-- [] It would be nice to support _all_ git log flags automatically, just passing them through directly and then doing the math only.
+- [ ] It would be nice to support _all_ git log flags automatically, just passing them through directly and then doing the math only.

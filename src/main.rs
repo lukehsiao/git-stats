@@ -6,7 +6,7 @@ use rayon::prelude::*;
 use tabled::{
     Table, Tabled,
     settings::{
-        Alignment, Modify, Style,
+        Alignment, Modify, Padding, Style,
         format::Format,
         object::{Columns, Rows},
     },
@@ -255,6 +255,8 @@ fn main() -> Result<()> {
         let mut table = Table::new(stats);
         table
             .with(Style::empty())
+            .modify(Columns::first(), Padding::new(0, 1, 0, 0))
+            .modify(Columns::last(), Padding::new(1, 0, 0, 0))
             .modify(Columns::new(1..=5), Alignment::right())
             .modify(
                 Rows::first(),
@@ -293,6 +295,8 @@ fn main() -> Result<()> {
             let mut table = Table::new(reviews);
             table
                 .with(Style::empty())
+                .modify(Columns::first(), Padding::new(0, 1, 0, 0))
+                .modify(Columns::last(), Padding::new(1, 0, 0, 0))
                 .with(Modify::new(Columns::new(1..=1)).with(Alignment::right()));
 
             println!("\n{table}");
