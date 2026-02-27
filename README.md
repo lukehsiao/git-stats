@@ -42,6 +42,12 @@ As such, it expects that you have `git`, `sort`, and `uniq` installed on your ma
 cargo install git-stats --locked
 ```
 
+Or, if you use [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall):
+
+```
+cargo binstall git-stats
+```
+
 ## Usage
 
 ```

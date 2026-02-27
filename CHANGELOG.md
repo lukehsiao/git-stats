@@ -1,8 +1,5 @@
-<!-- # Changelog -->
+# Changelog
 
-All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
-
----
 ## [0.1.21](https://github.com/lukehsiao/git-stats/compare/v0.1.20..v0.1.21) - 2026-01-07
 
 ### Bug Fixes
