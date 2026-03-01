@@ -4,6 +4,8 @@ updates:
       directory: "/"
       schedule:
           interval: "monthly"
+      commit-message:
+        prefix: "ci(deps)"
     - package-ecosystem: "cargo"
       directory: "/"
       schedule:
