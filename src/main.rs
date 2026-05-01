@@ -222,10 +222,10 @@ fn main() -> Result<()> {
         match cli.sort {
             SortBy::Author => stats.sort_unstable_by(|a, b| b.author.cmp(&a.author)),
             SortBy::Commits => (), // It's already sorted by commits
-            SortBy::Files => stats.sort_unstable_by(|a, b| b.num_files.cmp(&a.num_files)),
-            SortBy::Insertions => stats.sort_unstable_by(|a, b| b.insertions.cmp(&a.insertions)),
-            SortBy::Deletions => stats.sort_unstable_by(|a, b| b.deletions.cmp(&a.deletions)),
-            SortBy::Net => stats.sort_unstable_by(|a, b| b.net.cmp(&a.net)),
+            SortBy::Files => stats.sort_unstable_by_key(|b| std::cmp::Reverse(b.num_files)),
+            SortBy::Insertions => stats.sort_unstable_by_key(|b| std::cmp::Reverse(b.insertions)),
+            SortBy::Deletions => stats.sort_unstable_by_key(|b| std::cmp::Reverse(b.deletions)),
+            SortBy::Net => stats.sort_unstable_by_key(|b| std::cmp::Reverse(b.net)),
         }
         if cli.reverse {
             stats.reverse();
