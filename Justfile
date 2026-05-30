@@ -3,6 +3,16 @@
 _default:
 	@just --list
 
+# Runs the test suite
+[group('dev')]
+test:
+    cargo nextest run
+
+# Runs the test suite to compute coverage
+[group('dev')]
+coverage *FLAGS:
+    cargo llvm-cov nextest {{FLAGS}}
+
 # Runs clippy on the sources
 [group('dev')]
 check:

@@ -28,7 +28,21 @@ pkg-fmt = "zip"
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.6.1", features = ["wrap_help", "derive"] }
+gix = { version = "0.84.0", default-features = false, features = [
+    "revision",
+    "blob-diff",
+    "mailmap",
+    "parallel",
+    "max-performance-safe",
+    "sha1",
+] }
 rayon = "1.12.0"
+regex = "1.12.2"
 tabled = { version = "0.20.0", features = ["ansi"] }
-xshell = "0.2.7"
+thiserror = "2.0.18"
 yansi = { version = "1.0.1", features = ["detect-tty", "detect-env"] }
+
+[dev-dependencies]
+hegeltest = "0.14.18"
+tempfile = "3.27.0"
+yansi = "1.0.1"

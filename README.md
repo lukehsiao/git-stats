@@ -19,7 +19,7 @@
 </div>
 <br>
 
-Git Stats parses [log](https://git-scm.com/docs/git-log) information to get stats about the files changed, additions, and deletions.
+`git-stats` parses [log](https://git-scm.com/docs/git-log) information to get stats about the files changed, additions, and deletions.
 For example:
 
 ```
@@ -35,8 +35,8 @@ Luke Hsiao             1
 
 ## Install
 
-This is a glorified shell script.
-As such, it expects that you have `git`, `sort`, and `uniq` installed on your machine and in your `$PATH`.
+Git Stats reads your repository directly with [gitoxide](https://github.com/GitoxideLabs/gitoxide),
+a pure-Rust implementation of `git`.
 
 ### From crates.io
 
@@ -73,6 +73,17 @@ Options:
 ```
 
 
-## TODO
+## Notes
 
-- [ ] It would be nice to support _all_ git log flags automatically, just passing them through directly and then doing the math only.
+A few behaviors are worth knowing, mostly where reading git natively differs slightly from the
+porcelain:
+
+- **Revision ranges.** Single revisions, `A..B`, and `A...B` are supported, and each endpoint can be spelled any way `gitoxide` understands (refs, short hashes, `@{n}`, and so on).
+  More exotic gitrevisions(7) forms are not interpreted.
+- **`--since` / `--until`.** Accepts ISO 8601, RFC 2822, unix timestamps, and relative dates like `"2 weeks ago"`.
+  This is a subset of git's full approxidate, and filtering is on the committer date.
+- **`--author`.** Matches against the mailmap-resolved author (`Name <email>`), whereas `git log --author` matches the raw author header.
+  These differ only for repositories that carry a `.mailmap`.
+- **Merge commits** count as commits but contribute no line or file changes, matching the default of `git log --numstat`.
+- **Line counts** come from gitoxide's diff engine, which can differ from git's by a tiny margin on some hunks (a different but equally valid diff).
+  File and net counts match git's rename-aware output.
