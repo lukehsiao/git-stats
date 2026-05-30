@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0
+
+### Minor Changes
+
+- [`1af1932`](https://github.com/lukehsiao/git-stats/commit/1af1932bc1ddbe9e403caeafb15da1d4d107aa34) Thanks [@lukehsiao](https://github.com/lukehsiao)! - **refactor**: This is a full rewrite from being a glorified shell script to doing all of the computation natively in Rust.
+
+  There are no feature changes.
+
+<pre>
+$ git-stats v0.1.23..v0.2.0
+Author               Commits  Changed Files  Insertions  Deletions  Net Δ
+Luke Hsiao               127            246       +8609      -2658  +5951
+dependabot[bot]           52            102        +327       -457   -130
+github-actions[bot]        2             10         +71        -35    +36
+Total                    181            358       +9007      -3150  +5857
+</pre>
+
 ## 0.1.23
 
 ### Patch Changes
