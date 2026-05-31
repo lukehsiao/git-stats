@@ -8,6 +8,16 @@
 
   There are no feature changes.
 
+  This also dramatically improves performance.
+  For example, with this refactor, we can run on the `git/git` repository in
+  ```
+  Benchmark 1: git-stats
+    Time (mean ± σ):     19.520 s ±  0.622 s    [User: 185.828 s, System: 4.572 s]
+    Range (min … max):   18.460 s … 20.565 s    10 runs
+  ```
+  on a laptop with an Intel i7-1355U.
+  With the previous version of `git-stats` this takes about 6 minutes!
+
 <pre>
 $ git-stats v0.1.23..v0.2.0
 Author               Commits  Changed Files  Insertions  Deletions  Net Δ
@@ -56,9 +66,9 @@ Total             1              3         +39        -10    +29
 
 <pre>
 $ git-stats v0.1.21..v0.1.22
- Author      Commits  Changed Files  Insertions  Deletions  Net Δ 
- Luke Hsiao        3             17       +1249       -214  +1035 
- Total             3             17       +1249       -214  +1035 
+ Author      Commits  Changed Files  Insertions  Deletions  Net Δ
+ Luke Hsiao        3             17       +1249       -214  +1035
+ Total             3             17       +1249       -214  +1035
 </pre>
 
 ## [0.1.21](https://github.com/lukehsiao/git-stats/compare/v0.1.20..v0.1.21) - 2026-01-07
