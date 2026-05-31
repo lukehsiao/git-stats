@@ -16,7 +16,7 @@ use crate::repo::{self, Repo, WalkedCommit};
 /// pattern is invalid, or a commit's diff cannot be read.
 pub fn run(repo: &Repo, opts: &Options) -> Result<String> {
     // READ: walk the range once to get commit metadata.
-    let walked = repo.walk(&opts.range)?;
+    let walked = repo.walk(&opts.range, opts.reviews)?;
 
     let mut output = String::new();
 

@@ -65,15 +65,23 @@ impl Repo {
         }
     }
 
-    /// Read commit metadata for every commit in `range`.
+    /// Read commit metadata for every commit in `range`. Trailers are parsed
+    /// only when `need_trailers` is set, since they feed only the reviews table
+    /// and decoding every commit message is costly on large histories.
     ///
     /// # Errors
     ///
     /// Returns an error if the range cannot be resolved or a commit object
     /// cannot be read.
-    pub fn walk(&self, range: &str) -> Result<Vec<WalkedCommit>> {
+    pub fn walk(&self, range: &str, need_trailers: bool) -> Result<Vec<WalkedCommit>> {
         match &self.backend {
-            Backend::Real(tsr) => walk_real(&tsr.to_thread_local(), range),
+            Backend::Real(tsr) => {
+                let mut repo = tsr.to_thread_local();
+                // Match `numstats`: an object cache lets the metadata read reuse
+                // commits the traversal already decoded instead of re-reading packs.
+                repo.object_cache_size_if_unset(8 * 1024 * 1024);
+                walk_real(&repo, range, need_trailers)
+            }
             Backend::Null(commits) => Ok(commits
                 .iter()
                 .map(|c| WalkedCommit {
@@ -97,39 +105,76 @@ impl Repo {
             Backend::Real(tsr) => commits
                 .par_iter()
                 .map_init(
-                    || {
-                        let mut repo = tsr.to_thread_local();
-                        // Per-thread object cache so repeated tree/blob reads during
-                        // diffing hit memory instead of the pack. 8 MiB comfortably
-                        // holds a commit's trees at negligible per-thread cost.
-                        repo.object_cache_size_if_unset(8 * 1024 * 1024);
-                        repo
-                    },
-                    |repo, c| diffstat(c, Some(repo)),
+                    || Worker::new(tsr.to_thread_local()),
+                    |worker, c| worker.numstat(c),
                 )
                 .collect(),
-            Backend::Null(_) => commits.iter().map(|c| diffstat(c, None)).collect(),
+            Backend::Null(_) => Ok(commits.iter().map(|c| null_diffstat(c)).collect()),
         }
     }
 }
 
-/// A commit's numstat. Merge commits contribute nothing (matching
-/// `git log --numstat`); canned (null) commits return their stored value, and
-/// real commits are diffed against their first parent using `repo`.
-fn diffstat(commit: &WalkedCommit, repo: Option<&gix::Repository>) -> Result<DiffStat> {
-    if commit.is_merge {
-        return Ok(DiffStat::default());
+/// Per-rayon-worker state for the real backend: a thread-local repository and
+/// two diff resource caches built once and reused for every commit this worker
+/// handles. `gix::Tree::stats` would instead build a fresh cache per call, which
+/// re-parses the on-disk index and reassembles the attribute stack each time; on
+/// a large history that rebuild, not the diff itself, dominates the runtime.
+struct Worker {
+    repo: gix::Repository,
+    // `for_each_to_obtain_tree_with_cache` holds one cache for the tree walk
+    // while each change's line diff needs another, so a worker keeps two. They
+    // are built lazily because the cache constructor is fallible and rayon's
+    // `map_init` initializer cannot return a `Result`.
+    caches: Option<(gix::diff::blob::Platform, gix::diff::blob::Platform)>,
+}
+
+impl Worker {
+    fn new(mut repo: gix::Repository) -> Self {
+        // Per-thread object cache so repeated tree/blob reads during diffing hit
+        // memory instead of the pack. 8 MiB comfortably holds a commit's trees.
+        repo.object_cache_size_if_unset(8 * 1024 * 1024);
+        Self { repo, caches: None }
     }
-    match (&commit.handle, repo) {
-        (Handle::Null(diff), _) => Ok(*diff),
-        (Handle::Real(id), Some(repo)) => numstat_real(repo, *id),
-        // A real handle only ever comes from the real backend, which always
-        // supplies a repo, so this arm is unreachable in practice.
-        (Handle::Real(_), None) => Ok(DiffStat::default()),
+
+    fn numstat(&mut self, commit: &WalkedCommit) -> Result<DiffStat> {
+        if commit.is_merge {
+            return Ok(DiffStat::default());
+        }
+        let id = match &commit.handle {
+            Handle::Real(id) => *id,
+            // A real backend never yields a null handle; nothing to diff.
+            Handle::Null(_) => return Ok(DiffStat::default()),
+        };
+        if self.caches.is_none() {
+            let walk = self
+                .repo
+                .diff_resource_cache_for_tree_diff()
+                .map_err(|e| Error::DiffStats(Box::new(e)))?;
+            let count = self
+                .repo
+                .diff_resource_cache_for_tree_diff()
+                .map_err(|e| Error::DiffStats(Box::new(e)))?;
+            self.caches = Some((walk, count));
+        }
+        let Self { repo, caches } = self;
+        let (walk_cache, count_cache) = caches.as_mut().expect("initialized above");
+        numstat_real(repo, walk_cache, count_cache, id)
     }
 }
 
-fn walk_real(repo: &gix::Repository, range: &str) -> Result<Vec<WalkedCommit>> {
+/// A canned (null-backend) commit's numstat: its stored value, or nothing for a
+/// merge. Real handles never reach the null backend.
+fn null_diffstat(commit: &WalkedCommit) -> DiffStat {
+    if commit.is_merge {
+        return DiffStat::default();
+    }
+    match &commit.handle {
+        Handle::Null(diff) => *diff,
+        Handle::Real(_) => DiffStat::default(),
+    }
+}
+
+fn walk_real(repo: &gix::Repository, range: &str, need_trailers: bool) -> Result<Vec<WalkedCommit>> {
     let (tips, hidden) = resolve_range(repo, range)?;
     let mailmap = repo.open_mailmap();
     let walk = repo
@@ -148,7 +193,7 @@ fn walk_real(repo: &gix::Repository, range: &str) -> Result<Vec<WalkedCommit>> {
             .map_err(|e| Error::ReadCommit(Box::new(e)))?;
         let is_merge = commit.parent_ids().take(2).count() > 1;
         out.push(WalkedCommit {
-            meta: commit_meta(&commit, &mailmap)?,
+            meta: commit_meta(&commit, &mailmap, need_trailers)?,
             is_merge,
             handle: Handle::Real(info.id),
         });
@@ -156,7 +201,11 @@ fn walk_real(repo: &gix::Repository, range: &str) -> Result<Vec<WalkedCommit>> {
     Ok(out)
 }
 
-fn commit_meta(commit: &gix::Commit, mailmap: &gix::mailmap::Snapshot) -> Result<CommitMeta> {
+fn commit_meta(
+    commit: &gix::Commit,
+    mailmap: &gix::mailmap::Snapshot,
+    need_trailers: bool,
+) -> Result<CommitMeta> {
     let author = mailmap.resolve(
         commit
             .author()
@@ -166,13 +215,18 @@ fn commit_meta(commit: &gix::Commit, mailmap: &gix::mailmap::Snapshot) -> Result
         .committer()
         .map_err(|e| Error::ReadCommit(Box::new(e)))?
         .seconds();
+    let trailers = if need_trailers {
+        parse_trailers(commit)?
+    } else {
+        Vec::new()
+    };
     Ok(CommitMeta {
         author: Author {
             name: author.name.to_string(),
             email: author.email.to_string(),
         },
         time_seconds,
-        trailers: parse_trailers(commit)?,
+        trailers,
     })
 }
 
@@ -192,7 +246,12 @@ fn parse_trailers(commit: &gix::Commit) -> Result<Vec<Trailer>> {
         .collect())
 }
 
-fn numstat_real(repo: &gix::Repository, id: gix::ObjectId) -> Result<DiffStat> {
+fn numstat_real(
+    repo: &gix::Repository,
+    walk_cache: &mut gix::diff::blob::Platform,
+    count_cache: &mut gix::diff::blob::Platform,
+    id: gix::ObjectId,
+) -> Result<DiffStat> {
     let commit = repo
         .find_commit(id)
         .map_err(|e| Error::ReadCommit(Box::new(e)))?;
@@ -205,15 +264,35 @@ fn numstat_real(repo: &gix::Repository, id: gix::ObjectId) -> Result<DiffStat> {
             .map_err(|e| Error::ReadCommit(Box::new(e)))?,
         None => repo.empty_tree(),
     };
-    let stats = old_tree
+
+    // Equivalent to `gix::Tree::stats`, but driving caller-owned caches so the
+    // index and attribute stack are read once per worker rather than per commit.
+    let (mut files, mut insertions, mut deletions) = (0u64, 0u64, 0u64);
+    old_tree
         .changes()
         .map_err(|e| Error::DiffStats(Box::new(e)))?
-        .stats(&new_tree)
+        .for_each_to_obtain_tree_with_cache(&new_tree, walk_cache, |change| {
+            if let Some(counts) = change
+                .diff(count_cache)
+                .ok()
+                .and_then(|mut platform| platform.line_counts().ok())
+                .flatten()
+            {
+                files += 1;
+                insertions += u64::from(counts.insertions);
+                deletions += u64::from(counts.removals);
+            }
+            // The resource cache only grows; clear it between changes to bound memory.
+            count_cache.clear_resource_cache_keep_allocation();
+            Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
+        })
         .map_err(|e| Error::DiffStats(Box::new(e)))?;
+    walk_cache.clear_resource_cache_keep_allocation();
+
     Ok(DiffStat {
-        insertions: stats.lines_added,
-        deletions: stats.lines_removed,
-        files: stats.files_changed,
+        insertions,
+        deletions,
+        files,
     })
 }
 
