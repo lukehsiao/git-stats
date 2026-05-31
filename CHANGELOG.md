@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.1
+
+### Patch Changes
+
+- [`27a2bd7`](https://github.com/lukehsiao/git-stats/commit/27a2bd7d17073e9a4bffd238d5e12ccf7e3c80bc) Thanks [@lukehsiao](https://github.com/lukehsiao)! - **perf**: dramatically speed up stats on large repositories.
+
+  Per-commit diffing did redundant work that cancelled out parallelism. On a full
+  clone of `torvalds/linux`, `HEAD~2000..HEAD` (61,860 commits) now runs about 3x
+  faster, and a full-history run completes in minutes where it was previously
+  impractical. Output is unchanged.
+
+<pre>
+$ git-stats v0.2.0..v0.2.1
+Author               Commits  Changed Files  Insertions  Deletions  Net Δ
+Luke Hsiao               129            250       +8746      -2696  +6050
+dependabot[bot]           52            102        +327       -457   -130
+github-actions[bot]        3             15         +91        -45    +46
+Total                    184            367       +9164      -3198  +5966
+</pre>
+
 ## 0.2.0
 
 ### Minor Changes
@@ -10,11 +30,13 @@
 
   This also dramatically improves performance.
   For example, with this refactor, we can run on the `git/git` repository in
+
   ```
   Benchmark 1: git-stats
     Time (mean ± σ):     19.520 s ±  0.622 s    [User: 185.828 s, System: 4.572 s]
     Range (min … max):   18.460 s … 20.565 s    10 runs
   ```
+
   on a laptop with an Intel i7-1355U.
   With the previous version of `git-stats` this takes about 6 minutes!
 
