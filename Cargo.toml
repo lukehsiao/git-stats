@@ -37,12 +37,12 @@ gix = { version = "0.84.0", default-features = false, features = [
     "sha1",
 ] }
 rayon = "1.12.0"
-regex = "1.12.2"
-tabled = { version = "0.20.0", features = ["ansi"] }
+regex = "1.12.3"
+tabled = { version = "0.21.0", features = ["ansi"] }
 thiserror = "2.0.18"
 yansi = { version = "1.0.1", features = ["detect-tty", "detect-env"] }
 
 [dev-dependencies]
-hegeltest = "0.14.18"
+hegeltest = "0.14.26"
 tempfile = "3.27.0"
 yansi = "1.0.1"
