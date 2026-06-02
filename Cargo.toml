@@ -43,6 +43,6 @@ thiserror = "2.0.18"
 yansi = { version = "1.0.1", features = ["detect-tty", "detect-env"] }
 
 [dev-dependencies]
-hegeltest = "0.14.18"
+hegeltest = "0.14.25"
 tempfile = "3.27.0"
 yansi = "1.0.1"

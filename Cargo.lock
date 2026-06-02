@@ -1263,9 +1263,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hegeltest"
-version = "0.14.19"
+version = "0.14.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d37036e4bb599c03c248c5285e864fc3ea6a32acc7df3aaafa884abaf0615886"
+checksum = "8c2602a8edf380214a8cd182d3ada392400354acdccad0f301480d058632779a"
 dependencies = [
  "ciborium",
  "crc32fast",
@@ -1278,9 +1278,9 @@ dependencies = [
 
 [[package]]
 name = "hegeltest-macros"
-version = "0.14.19"
+version = "0.14.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85657fb10e16283ac7be61dc8450d18d12e1a7d19c853cf1672d5254d56397bc"
+checksum = "d6bf5b77139821299ce2367f6f6f2fc12a55269edab3ee5ada2685505facce86"
 dependencies = [
  "proc-macro2",
  "quote",
