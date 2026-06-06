@@ -109,9 +109,9 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
 name = "bitflags"
-version = "2.11.1"
+version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
+checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
 name = "block-buffer"
@@ -1263,9 +1263,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hegeltest"
-version = "0.14.26"
+version = "0.14.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ba04f3b050c4bf45454a4efd473af6a98cc40110bc664120959fd1a6a17012a"
+checksum = "0f8e84ddc1f22b055b011f6698759f9161123e4dc4d6a27c8276360e307e5228"
 dependencies = [
  "ciborium",
  "crc32fast",
@@ -1278,9 +1278,9 @@ dependencies = [
 
 [[package]]
 name = "hegeltest-macros"
-version = "0.14.26"
+version = "0.14.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8fe95b620cf590da4934837688041a0013f0fb09390d7a667cf50005f7b8e55"
+checksum = "b67743643fd380fcab53c7f2e106fe31752cde495416177336a8de6c8b85b81e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1413,9 +1413,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.30"
+version = "0.4.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "616ec5685824bcc94416c6d4a7a446eea774a31efd7062c8480ba6fd06d7a6e5"
+checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
 name = "maybe-async"
