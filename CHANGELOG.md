@@ -14,10 +14,9 @@
 <pre>
 $ git-stats v0.2.0..v0.2.1
 Author               Commits  Changed Files  Insertions  Deletions  Net Δ
-Luke Hsiao               129            250       +8746      -2696  +6050
-dependabot[bot]           52            102        +327       -457   -130
-github-actions[bot]        3             15         +91        -45    +46
-Total                    184            367       +9164      -3198  +5966
+Luke Hsiao                 2              4        +138        -39    +99
+github-actions[bot]        1              5         +29        -17    +12
+Total                      3              9        +167        -56   +111
 </pre>
 
 ## 0.2.0
@@ -43,10 +42,10 @@ Total                    184            367       +9164      -3198  +5966
 <pre>
 $ git-stats v0.1.23..v0.2.0
 Author               Commits  Changed Files  Insertions  Deletions  Net Δ
-Luke Hsiao               127            246       +8609      -2658  +5951
-dependabot[bot]           52            102        +327       -457   -130
-github-actions[bot]        2             10         +71        -35    +36
-Total                    181            358       +9007      -3150  +5857
+Luke Hsiao                 6             29       +3585       -494  +3091
+dependabot[bot]            2              2          +2         -2      0
+github-actions[bot]        1              5         +20        -10    +10
+Total                      9             36       +3607       -506  +3101
 </pre>
 
 ## 0.1.23

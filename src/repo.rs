@@ -174,7 +174,11 @@ fn null_diffstat(commit: &WalkedCommit) -> DiffStat {
     }
 }
 
-fn walk_real(repo: &gix::Repository, range: &str, need_trailers: bool) -> Result<Vec<WalkedCommit>> {
+fn walk_real(
+    repo: &gix::Repository,
+    range: &str,
+    need_trailers: bool,
+) -> Result<Vec<WalkedCommit>> {
     let (tips, hidden) = resolve_range(repo, range)?;
     let mailmap = repo.open_mailmap();
     let walk = repo
@@ -321,13 +325,22 @@ fn default_head(rev: &str) -> &str {
 }
 
 fn single(repo: &gix::Repository, rev: &str) -> Result<gix::ObjectId> {
+    let err = |source: Box<dyn std::error::Error + Send + Sync>| Error::ResolveRevision {
+        revision: rev.to_string(),
+        source,
+    };
+    // git peels tags recursively at rev-list endpoints, so an annotated tag
+    // must resolve to its target commit here. Without peeling, a tag OID on
+    // the hidden side matches nothing during the walk and the range silently
+    // degrades to whole-repo history.
     Ok(repo
         .rev_parse_single(rev)
-        .map_err(|e| Error::ResolveRevision {
-            revision: rev.to_string(),
-            source: Box::new(e),
-        })?
-        .detach())
+        .map_err(|e| err(Box::new(e)))?
+        .object()
+        .map_err(|e| err(Box::new(e)))?
+        .peel_to_commit()
+        .map_err(|e| err(Box::new(e)))?
+        .id)
 }
 
 fn merge_bases(repo: &gix::Repository, a: gix::ObjectId, b: gix::ObjectId) -> Vec<gix::ObjectId> {

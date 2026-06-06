@@ -173,6 +173,157 @@ fn symmetric_difference_range_excludes_the_common_ancestor() {
     );
 }
 
+/// Three commits on main with both tag flavors on the middle commit: the shape
+/// `git describe`-driven release ranges produce. The tempdir is returned so the
+/// repository outlives the test body.
+fn tag_fixture() -> (tempfile::TempDir, Repo) {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.name", "Ada"]);
+    git(p, &["config", "user.email", "ada@example.com"]);
+
+    for name in ["a", "b", "c"] {
+        std::fs::write(p.join(name).with_extension("txt"), "x\n").unwrap();
+        git(p, &["add", "."]);
+        git(p, &["commit", "-q", "-m", name]);
+    }
+    git(p, &["tag", "-a", "-m", "release", "annotated", "HEAD~1"]);
+    git(p, &["tag", "lightweight", "HEAD~1"]);
+
+    let repo = Repo::open(p).unwrap();
+    (dir, repo)
+}
+
+fn total_commits(out: &str) -> Option<&str> {
+    row(out, "Total").split_whitespace().nth(1)
+}
+
+#[test]
+fn lightweight_tag_range_is_unaffected() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let (_dir, repo) = tag_fixture();
+    let out = report(&repo, &options("lightweight..HEAD", false));
+
+    assert_eq!(
+        total_commits(&out),
+        Some("1"),
+        "lightweight..HEAD should count only the commit after the tag:\n{out}"
+    );
+}
+
+#[test]
+fn annotated_tag_range_excludes_commits_behind_the_tag() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let (_dir, repo) = tag_fixture();
+    let out = report(&repo, &options("annotated..HEAD", false));
+
+    // The tag object must be peeled to its commit before going into the hidden
+    // set; an unpeeled tag OID matches nothing and the range silently degrades
+    // to whole-repo history (3 commits here).
+    assert_eq!(
+        total_commits(&out),
+        Some("1"),
+        "annotated..HEAD should count only the commit after the tag:\n{out}"
+    );
+}
+
+#[test]
+fn annotated_tag_on_the_inclusion_side_resolves() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let (_dir, repo) = tag_fixture();
+    let out = report(&repo, &options("HEAD~2..annotated", false));
+
+    assert_eq!(
+        total_commits(&out),
+        Some("1"),
+        "HEAD~2..annotated should count only the tagged commit:\n{out}"
+    );
+}
+
+#[test]
+fn a_bare_annotated_tag_resolves_to_its_target_commit() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let (dir, repo) = tag_fixture();
+    let out = report(&repo, &options("annotated", false));
+
+    // The tag points at the second of three commits, so its history is 2 deep.
+    assert_eq!(
+        total_commits(&out),
+        Some("2"),
+        "a bare annotated tag should walk from its target commit:\n{out}"
+    );
+
+    // git peels tags recursively, so a tag pointing at another tag must
+    // resolve to the same commit.
+    git(
+        dir.path(),
+        &["tag", "-a", "-m", "wrap", "nested", "annotated"],
+    );
+    let out = report(&repo, &options("nested", false));
+    assert_eq!(
+        total_commits(&out),
+        Some("2"),
+        "a tag-to-tag chain should peel to the same commit:\n{out}"
+    );
+}
+
+#[test]
+fn symmetric_difference_with_an_annotated_tag_resolves() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.name", "Ada"]);
+    git(p, &["config", "user.email", "ada@example.com"]);
+
+    std::fs::write(p.join("a.txt"), "a\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "base"]);
+
+    git(p, &["checkout", "-q", "-b", "feature"]);
+    std::fs::write(p.join("b.txt"), "b\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "feature only"]);
+    git(p, &["tag", "-a", "-m", "release", "feature-tag"]);
+
+    git(p, &["checkout", "-q", "main"]);
+    std::fs::write(p.join("c.txt"), "c\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "main only"]);
+
+    let repo = Repo::open(p).unwrap();
+    // Unlike the two-dot tests, `...` also feeds the endpoints to the
+    // merge-base computation, which needs commit OIDs rather than tag OIDs.
+    let out = report(&repo, &options("main...feature-tag", false));
+
+    assert_eq!(
+        total_commits(&out),
+        Some("2"),
+        "main...feature-tag should count the 2 divergent commits:\n{out}"
+    );
+}
+
 #[test]
 fn merge_commits_are_counted_but_add_no_lines() {
     if !git_available() {
