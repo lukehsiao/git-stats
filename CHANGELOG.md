@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.2.3
+
+### Patch Changes
+
+- [`1a3e321`](https://github.com/lukehsiao/git-stats/commit/1a3e3213a615374136f36cf25d689d0dd1ec2e04) - **fix**: exit quietly when stdout closes early instead of panicking.
+
+  Piping into a pager or `head` closes stdout before the report is fully written.
+  Rust ignores SIGPIPE, so `git-stats | head` could die with a noisy "failed printing to stdout: Broken pipe" panic.
+  It now exits silently with status 141, the same status a shell reports for git itself.
+
+- [`0193da9`](https://github.com/lukehsiao/git-stats/commit/0193da983104928b88bc02ea65b4004cb8a91beb) - **fix**: count binary file changes in the Changed Files column.
+
+  Since the v0.2.0 rewrite, a binary file change was dropped entirely from the stats because it has no line counts, under-reporting the Changed Files column for commits touching images or other binary blobs.
+  Binary changes now count as changed files contributing no lines, matching `git diff --shortstat`.
+
+- [`ba65955`](https://github.com/lukehsiao/git-stats/commit/ba65955f7f6517ef7d5204e95e7ffc2699b8fe19) - **fix**: count submodule pointer changes the way `git log --numstat` does.
+
+  A gitlink has no blob to diff, so submodule additions and pointer bumps were dropped from the stats entirely.
+  git renders the pointer as a one-line `Subproject commit <hash>` pseudo-file; `git-stats` now matches it: an added submodule is one file and +1, a repointed one is one file with +1/-1.
+  A renamed submodule still diverges from git, counting as an addition plus a deletion rather than a paired rename.
+
+- [`c580553`](https://github.com/lukehsiao/git-stats/commit/c5805533162153c0eb9713c6984d7233f8106a99) - **perf**: decode each commit header once during the history walk.
+
+  The walk used to rescan the raw header separately for the parents, author, committer, and message.
+  Walk-dominated invocations (heavy filtering, `--reviews`) are about 10% faster; diff-heavy runs are unchanged.
+
+- [`cbd4379`](https://github.com/lukehsiao/git-stats/commit/cbd4379e5a3d221e2aaed34f1cdfcdad4f8536a1) - **fix**: hide every merge base in symmetric difference (`A...B`) ranges.
+
+  `A...B` hid only the single "best" merge base, but criss-cross histories have more than one.
+  Commits reachable from the unhidden bases leaked into the walk, inflating the counts relative to `git rev-list --count A...B`.
+  All merge bases are now hidden, matching git.
+
+- [`bf3e00c`](https://github.com/lukehsiao/git-stats/commit/bf3e00c141d35cea3b421a1b67972e58918b7fe7) - **fix**: honor `GIT_DIR` and related environment variables when locating the repository.
+
+  Repository discovery only searched upward from the current directory, so `git-stats` failed inside git hooks (git sets `GIT_DIR` for them, and the working directory need not be in the repository) and under `git --git-dir=... stats`.
+  Discovery now checks the environment first, exactly like git.
+
+- [`f058233`](https://github.com/lukehsiao/git-stats/commit/f058233e5f557bf512685f8587efd4e3814361af) - **fix**: name the offending commit when one fails to decode.
+
+  A corrupt commit header used to kill the report with an anonymous "could not read commit data: object parsing failed", leaving no way to locate the bad object in a large history.
+  When the repository has a commit-graph (git writes one during `gc` by default), the error now reads "could not decode commit <id>".
+
+- [`a7c967b`](https://github.com/lukehsiao/git-stats/commit/a7c967b3afcdd6d762c4f37e69f1a5105e9e2ba7) - **fix**: drop the stray leading blank line when only the reviews table renders.
+
+  Reviews ignore the author and date filters by design, so filters that match no commits leave the stats table empty while `--reviews` still prints.
+  The output began with a blank line meant to separate the two tables; it now appears only when both tables are present.
+
+- [`35107c7`](https://github.com/lukehsiao/git-stats/commit/35107c723dba33510945741b8f624609e3b50a57) - **fix**: support shallow clones.
+
+  Since the v0.2.0 rewrite, running `git-stats` in a shallow clone failed with "could not read commit data": computing stats for a commit at the shallow boundary tried to load its parent, which a shallow clone does not have.
+  Boundary commits now diff against the empty tree, exactly like root commits, matching `git log --numstat`.
+  Because the truncated history makes every count differ from the full clone's, `git-stats` also prints a warning to stderr when it detects a shallow clone.
+
+- [`dfdac00`](https://github.com/lukehsiao/git-stats/commit/dfdac00894f50d289b1122cf1ee3fba2c1d860e5) - **perf**: validate `--author`, `--since`, and `--until` before walking the range.
+
+  A typo'd pattern or date now errors immediately instead of after a walk that can take minutes on a large history.
+
+<pre>
+$ git-stats v0.2.2..v0.2.3
+Author      Commits  Changed Files  Insertions  Deletions  Net Δ
+Luke Hsiao       16             41       +1029        -75   +954
+Total            16             41       +1029        -75   +954
+</pre>
+
 ## 0.2.2
 
 ### Patch Changes
