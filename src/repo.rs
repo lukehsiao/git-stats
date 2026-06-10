@@ -311,15 +311,20 @@ fn numstat_real(
         .changes()
         .map_err(|e| Error::DiffStats(Box::new(e)))?
         .for_each_to_obtain_tree_with_cache(&new_tree, walk_cache, |change| {
-            if let Some(counts) = change
+            match change
                 .diff(count_cache)
                 .ok()
                 .and_then(|mut platform| platform.line_counts().ok())
-                .flatten()
             {
-                files += 1;
-                insertions += u64::from(counts.insertions);
-                deletions += u64::from(counts.removals);
+                Some(Some(counts)) => {
+                    files += 1;
+                    insertions += u64::from(counts.insertions);
+                    deletions += u64::from(counts.removals);
+                }
+                // A binary change has no line counts (numstat's `-  -  path`)
+                // but still counts as a changed file, as in `git diff --shortstat`.
+                Some(None) => files += 1,
+                None => {}
             }
             // The resource cache only grows; clear it between changes to bound memory.
             count_cache.clear_resource_cache_keep_allocation();

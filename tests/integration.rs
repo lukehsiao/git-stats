@@ -328,6 +328,41 @@ fn symmetric_difference_with_an_annotated_tag_resolves() {
 }
 
 #[test]
+fn binary_file_changes_count_as_changed_files() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.name", "Ada"]);
+    git(p, &["config", "user.email", "ada@example.com"]);
+
+    // One text file and one binary file (NUL bytes) in the same commit.
+    // `git log --numstat` lists the binary file as `-  -  path` and
+    // `git diff --shortstat` reports "2 files changed, 2 insertions(+)".
+    std::fs::write(p.join("a.txt"), "one\ntwo\n").unwrap();
+    std::fs::write(p.join("blob.bin"), [0u8, 159, 146, 150, 0, 10]).unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "add text and binary"]);
+
+    let repo = Repo::open(p).unwrap();
+    let out = report(&repo, &options("HEAD", false));
+
+    let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
+    assert_eq!(
+        cols[2], "2",
+        "the binary file should count as a changed file:\n{out}"
+    );
+    assert_eq!(
+        cols[3], "+2",
+        "only the text file should contribute lines:\n{out}"
+    );
+}
+
+#[test]
 fn shallow_clones_treat_boundary_commits_as_parentless() {
     if !git_available() {
         eprintln!("git not available; skipping integration test");
