@@ -220,7 +220,12 @@ fn walk_real(
         let commit = repo
             .find_commit(info.id)
             .map_err(|e| Error::ReadCommit(Box::new(e)))?;
-        let is_merge = commit.parent_ids().take(2).count() > 1;
+        // Decode the header once; the author, committer, parents, and message
+        // accessors on `gix::Commit` would each rescan the raw bytes.
+        let commit = commit
+            .decode()
+            .map_err(|e| Error::ReadCommit(Box::new(e)))?;
+        let is_merge = commit.parents.len() > 1;
         out.push(WalkedCommit {
             meta: commit_meta(&commit, &mailmap, need_trailers)?,
             is_merge,
@@ -231,7 +236,7 @@ fn walk_real(
 }
 
 fn commit_meta(
-    commit: &gix::Commit,
+    commit: &gix::objs::CommitRef<'_>,
     mailmap: &gix::mailmap::Snapshot,
     need_trailers: bool,
 ) -> Result<CommitMeta> {
@@ -245,7 +250,7 @@ fn commit_meta(
         .map_err(|e| Error::ReadCommit(Box::new(e)))?
         .seconds();
     let trailers = if need_trailers {
-        parse_trailers(commit)?
+        parse_trailers(commit)
     } else {
         Vec::new()
     };
@@ -259,20 +264,16 @@ fn commit_meta(
     })
 }
 
-fn parse_trailers(commit: &gix::Commit) -> Result<Vec<Trailer>> {
-    let message = commit
-        .message()
-        .map_err(|e| Error::ReadCommit(Box::new(e)))?;
-    let Some(body) = message.body() else {
-        return Ok(Vec::new());
+fn parse_trailers(commit: &gix::objs::CommitRef<'_>) -> Vec<Trailer> {
+    let Some(body) = commit.message().body() else {
+        return Vec::new();
     };
-    Ok(body
-        .trailers()
+    body.trailers()
         .map(|t| Trailer {
             token: t.token.to_string(),
             value: t.value.to_string(),
         })
-        .collect())
+        .collect()
 }
 
 fn numstat_real(
