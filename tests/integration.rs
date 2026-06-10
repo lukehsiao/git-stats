@@ -528,6 +528,48 @@ fn broken_pipe_exits_quietly() {
     );
 }
 
+/// git honors `GIT_DIR` when locating the repository, and sets it itself when
+/// running hooks, so `GIT_DIR=... git stats` from outside the repository must
+/// work exactly like `GIT_DIR=... git log` does.
+#[test]
+fn git_dir_environment_override_is_honored() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    let repo_dir = p.join("repo");
+    std::fs::create_dir(&repo_dir).unwrap();
+    git(&repo_dir, &["init", "-q", "-b", "main"]);
+    git(&repo_dir, &["config", "user.name", "Ada"]);
+    git(&repo_dir, &["config", "user.email", "ada@example.com"]);
+    std::fs::write(repo_dir.join("a.txt"), "a\n").unwrap();
+    git(&repo_dir, &["add", "."]);
+    git(&repo_dir, &["commit", "-q", "-m", "c1"]);
+
+    // A directory that is not inside any repository.
+    let elsewhere = p.join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_git-stats"))
+        .current_dir(&elsewhere)
+        .env("GIT_DIR", repo_dir.join(".git"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "GIT_DIR run failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        stdout.contains("Ada"),
+        "report should show the GIT_DIR repository's author:\n{stdout}"
+    );
+}
+
 /// `.mailmap` resolution must match `git shortlog -sne`: commits recorded
 /// under an old identity fold into the mapped one, while authors the map
 /// does not mention stay untouched.

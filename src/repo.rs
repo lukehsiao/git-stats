@@ -43,15 +43,20 @@ pub struct Repo {
 }
 
 impl Repo {
-    /// Open the repository containing `path`, searching upward like git does.
+    /// Open the repository containing `path`. Like git, this honors `GIT_DIR`
+    /// and related environment variables first (git sets them when running
+    /// hooks and for `--git-dir` invocations), then searches upward from
+    /// `path`.
     ///
     /// # Errors
     ///
-    /// Returns an error if no git repository can be discovered from `path`.
+    /// Returns an error if no git repository can be discovered from the
+    /// environment or `path`.
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
-        let repo = gix::discover(path).map_err(|e| Error::OpenRepository(Box::new(e)))?;
+        let repo = gix::ThreadSafeRepository::discover_with_environment_overrides(path)
+            .map_err(|e| Error::OpenRepository(Box::new(e)))?;
         Ok(Self {
-            backend: Backend::Real(Box::new(repo.into_sync())),
+            backend: Backend::Real(Box::new(repo)),
         })
     }
 
