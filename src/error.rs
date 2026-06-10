@@ -39,6 +39,15 @@ pub enum Error {
     #[error("could not read commit data")]
     ReadCommit(#[source] Source),
 
+    /// A specific commit object could not be decoded, typically because its
+    /// header is corrupt in a way git itself would never write.
+    #[error("could not decode commit {id}")]
+    DecodeCommit {
+        id: String,
+        #[source]
+        source: Source,
+    },
+
     /// Computing a commit's diff stats failed.
     #[error("could not compute diff stats")]
     DiffStats(#[source] Source),

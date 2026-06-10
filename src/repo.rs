@@ -226,9 +226,10 @@ fn walk_real(
             .map_err(|e| Error::ReadCommit(Box::new(e)))?;
         // Decode the header once; the author, committer, parents, and message
         // accessors on `gix::Commit` would each rescan the raw bytes.
-        let commit = commit
-            .decode()
-            .map_err(|e| Error::ReadCommit(Box::new(e)))?;
+        let commit = commit.decode().map_err(|e| Error::DecodeCommit {
+            id: info.id.to_string(),
+            source: Box::new(e),
+        })?;
         let is_boundary = shallow
             .as_ref()
             .is_some_and(|s| s.binary_search(&info.id).is_ok());

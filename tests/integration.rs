@@ -659,6 +659,61 @@ fn shallow_boundary_merges_diff_like_root_commits() {
     assert_eq!(cols[3], "+4", "expected +4 total insertions:\n{out}");
 }
 
+/// A commit whose header git itself would never write (non-numeric committer
+/// timestamp) fails gitoxide's strict decode. Tolerating such fsck-level
+/// corruption is out of scope, but the error must name the offending commit;
+/// an anonymous "object parsing failed" is undiagnosable in a large history.
+///
+/// The named path requires a commit-graph (gc writes one by default since
+/// git 2.24): with it, traversal reads parents from the graph and our decode
+/// is the first to touch the corrupt object. Without it, gitoxide's walk
+/// iterator fails first and its error carries no id, which only gitoxide can
+/// fix upstream.
+#[test]
+fn decode_failures_name_the_offending_commit() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.name", "Ada"]);
+    git(p, &["config", "user.email", "ada@example.com"]);
+    std::fs::write(p.join("a.txt"), "a\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "good"]);
+
+    let tree = git_out(p, &["rev-parse", "HEAD^{tree}"]);
+    let parent = git_out(p, &["rev-parse", "HEAD"]);
+    let raw = format!(
+        "tree {tree}\nparent {parent}\nauthor Ada <ada@x> not-a-timestamp\n\
+         committer Ada <ada@x> not-a-timestamp\n\nbad date\n"
+    );
+    std::fs::write(p.join("raw-commit"), &raw).unwrap();
+    let bad = git_out(
+        p,
+        &[
+            "hash-object",
+            "--literally",
+            "-t",
+            "commit",
+            "-w",
+            "raw-commit",
+        ],
+    );
+    git(p, &["update-ref", "refs/heads/main", &bad]);
+    git(p, &["commit-graph", "write", "--reachable"]);
+
+    let repo = Repo::open(p).unwrap();
+    let err = app::run(&repo, &options("HEAD", false)).unwrap_err();
+    assert!(
+        err.to_string().contains(&bad),
+        "error should name the undecodable commit {bad}: {err}"
+    );
+}
+
 #[test]
 fn merge_commits_are_counted_but_add_no_lines() {
     if !git_available() {
