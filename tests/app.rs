@@ -133,6 +133,19 @@ fn empty_repo_renders_nothing() {
 }
 
 #[test]
+fn invalid_author_pattern_is_a_typed_error() {
+    let repo = Repo::create_null(vec![commit("Ada", "ada@x", 100, diff(1, 0, 1))]);
+    let mut opts = options();
+    opts.authors = vec!["[".to_string()];
+
+    let err = app::run(&repo, &opts).unwrap_err();
+    assert!(
+        matches!(err, git_stats::Error::AuthorPattern(_)),
+        "expected AuthorPattern, got: {err:?}"
+    );
+}
+
+#[test]
 fn merge_commits_count_but_contribute_no_lines() {
     let mut merge = commit("Ada", "ada@x", 100, diff(999, 999, 9));
     merge.is_merge = true;
