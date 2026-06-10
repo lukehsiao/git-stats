@@ -85,5 +85,7 @@ porcelain:
 - **`--author`.** Matches against the mailmap-resolved author (`Name <email>`), whereas `git log --author` matches the raw author header.
   These differ only for repositories that carry a `.mailmap`.
 - **Merge commits** count as commits but contribute no line or file changes, matching the default of `git log --numstat`.
+- **Shallow clones** work: commits at the shallow boundary diff against the empty tree, exactly as `git log --numstat` shows them.
+  A warning on stderr notes that the truncated history makes the stats differ from a full clone's.
 - **Line counts** come from gitoxide's diff engine, which can differ from git's by a tiny margin on some hunks (a different but equally valid diff).
   File and net counts match git's rename-aware output.

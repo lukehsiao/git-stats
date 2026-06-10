@@ -65,6 +65,17 @@ impl Repo {
         }
     }
 
+    /// Whether the repository is a shallow clone. Its truncated history makes
+    /// every count differ from the full clone's, so callers may want to warn.
+    /// Nulled repositories never are.
+    #[must_use]
+    pub fn is_shallow(&self) -> bool {
+        match &self.backend {
+            Backend::Real(tsr) => tsr.to_thread_local().is_shallow(),
+            Backend::Null(_) => false,
+        }
+    }
+
     /// Read commit metadata for every commit in `range`. Trailers are parsed
     /// only when `need_trailers` is set, since they feed only the reviews table
     /// and decoding every commit message is costly on large histories.
@@ -121,6 +132,9 @@ impl Repo {
 /// a large history that rebuild, not the diff itself, dominates the runtime.
 struct Worker {
     repo: gix::Repository,
+    // Commits at the shallow boundary, whose parents exist in their headers
+    // but not in the object database. `None` when the clone is not shallow.
+    shallow: Option<gix::shallow::Commits>,
     // `for_each_to_obtain_tree_with_cache` holds one cache for the tree walk
     // while each change's line diff needs another, so a worker keeps two. They
     // are built lazily because the cache constructor is fallible and rayon's
@@ -133,7 +147,14 @@ impl Worker {
         // Per-thread object cache so repeated tree/blob reads during diffing hit
         // memory instead of the pack. 8 MiB comfortably holds a commit's trees.
         repo.object_cache_size_if_unset(8 * 1024 * 1024);
-        Self { repo, caches: None }
+        // An unreadable shallow file degrades to "not shallow"; a boundary
+        // commit then surfaces its missing parent as a read error below.
+        let shallow = repo.shallow_commits().ok().flatten();
+        Self {
+            repo,
+            shallow,
+            caches: None,
+        }
     }
 
     fn numstat(&mut self, commit: &WalkedCommit) -> Result<DiffStat> {
@@ -156,9 +177,13 @@ impl Worker {
                 .map_err(|e| Error::DiffStats(Box::new(e)))?;
             self.caches = Some((walk, count));
         }
-        let Self { repo, caches } = self;
+        let Self {
+            repo,
+            shallow,
+            caches,
+        } = self;
         let (walk_cache, count_cache) = caches.as_mut().expect("initialized above");
-        numstat_real(repo, walk_cache, count_cache, id)
+        numstat_real(repo, walk_cache, count_cache, shallow.as_ref(), id)
     }
 }
 
@@ -254,13 +279,23 @@ fn numstat_real(
     repo: &gix::Repository,
     walk_cache: &mut gix::diff::blob::Platform,
     count_cache: &mut gix::diff::blob::Platform,
+    shallow: Option<&gix::shallow::Commits>,
     id: gix::ObjectId,
 ) -> Result<DiffStat> {
     let commit = repo
         .find_commit(id)
         .map_err(|e| Error::ReadCommit(Box::new(e)))?;
     let new_tree = commit.tree().map_err(|e| Error::ReadCommit(Box::new(e)))?;
-    let old_tree = match commit.parent_ids().next() {
+    // A commit at the shallow boundary names parents that are not in the
+    // object database. git diffs it against the empty tree, exactly like a
+    // root commit, so do the same instead of failing on the missing parent.
+    let is_boundary = shallow.is_some_and(|s| s.binary_search(&id).is_ok());
+    let parent = if is_boundary {
+        None
+    } else {
+        commit.parent_ids().next()
+    };
+    let old_tree = match parent {
         Some(parent) => repo
             .find_commit(parent.detach())
             .map_err(|e| Error::ReadCommit(Box::new(e)))?

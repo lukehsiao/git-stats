@@ -9,6 +9,11 @@ fn main() -> Result<()> {
 
     let opts = Cli::parse().into_options();
     let repo = Repo::open(".")?;
+    if repo.is_shallow() {
+        eprintln!(
+            "warning: this is a shallow clone; commits beyond the shallow boundary are not counted"
+        );
+    }
     let output = app::run(&repo, &opts)?;
     print!("{output}");
     Ok(())

@@ -2,6 +2,7 @@
 //! guards against drift between the nulled [`Repo`] used elsewhere and the
 //! actual gix-backed implementation (range walking, numstat, trailers).
 
+use std::fmt::Write as _;
 use std::path::Path;
 use std::process::Command;
 
@@ -83,6 +84,8 @@ fn reads_a_real_repository() {
     git(p, &["commit", "-q", "-m", "second"]);
 
     let repo = Repo::open(p).unwrap();
+    // Control for the shallow-clone probe: a full repository must not warn.
+    assert!(!repo.is_shallow(), "full repository detected as shallow");
     let out = report(&repo, &options("HEAD", true));
 
     // Ada: 2 commits; root adds 2 lines, the follow-up adds 1, so +3 insertions.
@@ -321,6 +324,52 @@ fn symmetric_difference_with_an_annotated_tag_resolves() {
         total_commits(&out),
         Some("2"),
         "main...feature-tag should count the 2 divergent commits:\n{out}"
+    );
+}
+
+#[test]
+fn shallow_clones_treat_boundary_commits_as_parentless() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    let origin = p.join("origin");
+    std::fs::create_dir(&origin).unwrap();
+    git(&origin, &["init", "-q", "-b", "main"]);
+    git(&origin, &["config", "user.name", "Ada"]);
+    git(&origin, &["config", "user.email", "ada@example.com"]);
+
+    // Three commits, each growing the same file by one line.
+    let mut content = String::new();
+    for i in 1..=3 {
+        writeln!(content, "line{i}").unwrap();
+        std::fs::write(origin.join("f.txt"), &content).unwrap();
+        git(&origin, &["add", "."]);
+        git(&origin, &["commit", "-q", "-m", &format!("c{i}")]);
+    }
+
+    // A depth-2 clone keeps c2 and c3, with c2 as the shallow boundary: its
+    // parent c1 exists in c2's header but not in the object database. The
+    // file:// URL matters; a bare local path would not produce a shallow clone.
+    let url = format!("file://{}", origin.display());
+    git(p, &["clone", "-q", "--depth", "2", &url, "shallow"]);
+
+    let repo = Repo::open(p.join("shallow")).unwrap();
+    // The binary warns on shallow clones via this probe; the full-clone
+    // control lives in `reads_a_real_repository`.
+    assert!(repo.is_shallow(), "depth-2 clone should detect as shallow");
+    let out = report(&repo, &options("HEAD", false));
+
+    // git log --numstat here shows c3 as +1 and the boundary commit c2 as its
+    // whole tree (+2), exactly like a root commit, so the total is +3.
+    let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
+    assert_eq!(cols[1], "2", "both retained commits should count:\n{out}");
+    assert_eq!(
+        cols[3], "+3",
+        "the boundary commit should diff against the empty tree:\n{out}"
     );
 }
 
