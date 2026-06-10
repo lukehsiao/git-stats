@@ -377,6 +377,36 @@ fn symmetric_difference_with_an_annotated_tag_resolves() {
 }
 
 #[test]
+fn filter_validation_precedes_the_walk() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.name", "Ada"]);
+    git(p, &["config", "user.email", "ada@example.com"]);
+    std::fs::write(p.join("a.txt"), "a\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "base"]);
+
+    let repo = Repo::open(p).unwrap();
+    let mut opts = options("no-such-ref..HEAD", false);
+    opts.since = Some("not-a-date".to_string());
+
+    // Both the range and the date are bad. The date must win: filters are
+    // cheap to validate and should error before a potentially expensive walk
+    // of the whole range even starts.
+    let err = app::run(&repo, &opts).unwrap_err();
+    assert!(
+        matches!(err, git_stats::Error::InvalidDate { .. }),
+        "expected InvalidDate before any range resolution, got: {err:?}"
+    );
+}
+
+#[test]
 fn binary_file_changes_count_as_changed_files() {
     if !git_available() {
         eprintln!("git not available; skipping integration test");
