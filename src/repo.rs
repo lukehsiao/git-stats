@@ -206,6 +206,10 @@ fn walk_real(
 ) -> Result<Vec<WalkedCommit>> {
     let (tips, hidden) = resolve_range(repo, range)?;
     let mailmap = repo.open_mailmap();
+    // git grafts commits at the shallow boundary as parentless, so one whose
+    // header names several parents is not a merge there. An unreadable shallow
+    // file degrades to "not shallow", mirroring Worker::new.
+    let shallow = repo.shallow_commits().ok().flatten();
     let walk = repo
         .rev_walk(tips)
         .with_hidden(hidden)
@@ -225,7 +229,10 @@ fn walk_real(
         let commit = commit
             .decode()
             .map_err(|e| Error::ReadCommit(Box::new(e)))?;
-        let is_merge = commit.parents.len() > 1;
+        let is_boundary = shallow
+            .as_ref()
+            .is_some_and(|s| s.binary_search(&info.id).is_ok());
+        let is_merge = !is_boundary && commit.parents.len() > 1;
         out.push(WalkedCommit {
             meta: commit_meta(&commit, &mailmap, need_trailers)?,
             is_merge,

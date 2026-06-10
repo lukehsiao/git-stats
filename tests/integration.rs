@@ -488,6 +488,58 @@ fn shallow_clones_treat_boundary_commits_as_parentless() {
 }
 
 #[test]
+fn shallow_boundary_merges_diff_like_root_commits() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    let origin = p.join("origin");
+    std::fs::create_dir(&origin).unwrap();
+    git(&origin, &["init", "-q", "-b", "main"]);
+    git(&origin, &["config", "user.name", "Ada"]);
+    git(&origin, &["config", "user.email", "ada@example.com"]);
+
+    // History whose second-newest commit is a merge: base, a feature branch,
+    // a diverging main, the merge, and one commit on top.
+    std::fs::write(origin.join("a.txt"), "a\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "base"]);
+    git(&origin, &["checkout", "-q", "-b", "feat"]);
+    std::fs::write(origin.join("b.txt"), "b\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "feat"]);
+    git(&origin, &["checkout", "-q", "main"]);
+    std::fs::write(origin.join("c.txt"), "c\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "main side"]);
+    git(&origin, &["merge", "-q", "--no-ff", "--no-edit", "feat"]);
+    std::fs::write(origin.join("d.txt"), "d\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "top"]);
+
+    // The depth-2 clone keeps "top" and the merge, grafting the merge as the
+    // parentless shallow boundary. Its header still names two parents, but
+    // git neither treats it as a merge nor skips it: git log --numstat shows
+    // its entire tree (a, b, c), plus d from "top", so 4 files and +4 lines.
+    let url = format!("file://{}", origin.display());
+    git(p, &["clone", "-q", "--depth", "2", &url, "shallow"]);
+
+    let repo = Repo::open(p.join("shallow")).unwrap();
+    let out = report(&repo, &options("HEAD", false));
+
+    let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
+    assert_eq!(cols[1], "2", "both retained commits should count:\n{out}");
+    assert_eq!(
+        cols[2], "4",
+        "the grafted merge should contribute its whole tree:\n{out}"
+    );
+    assert_eq!(cols[3], "+4", "expected +4 total insertions:\n{out}");
+}
+
+#[test]
 fn merge_commits_are_counted_but_add_no_lines() {
     if !git_available() {
         eprintln!("git not available; skipping integration test");
