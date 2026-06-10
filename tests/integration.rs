@@ -22,6 +22,19 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed");
 }
 
+/// Like [`git`], but capture and return trimmed stdout.
+fn git_out(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .output()
+        .expect("git should be installed");
+    assert!(out.status.success(), "git {args:?} failed");
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
 fn options(range: &str, reviews: bool) -> Options {
     Options {
         range: range.to_string(),
@@ -439,6 +452,113 @@ fn binary_file_changes_count_as_changed_files() {
         cols[3], "+2",
         "only the text file should contribute lines:\n{out}"
     );
+}
+
+#[test]
+fn submodule_changes_count_like_git_numstat() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    let inner = p.join("inner");
+    std::fs::create_dir(&inner).unwrap();
+    git(&inner, &["init", "-q", "-b", "main"]);
+    git(&inner, &["config", "user.name", "Ada"]);
+    git(&inner, &["config", "user.email", "ada@example.com"]);
+    std::fs::write(inner.join("x.txt"), "x\n").unwrap();
+    git(&inner, &["add", "."]);
+    git(&inner, &["commit", "-q", "-m", "inner 1"]);
+    let sha1 = git_out(&inner, &["rev-parse", "HEAD"]);
+    std::fs::write(inner.join("y.txt"), "y\n").unwrap();
+    git(&inner, &["add", "."]);
+    git(&inner, &["commit", "-q", "-m", "inner 2"]);
+    let sha2 = git_out(&inner, &["rev-parse", "HEAD"]);
+
+    // Gitlink entries via plumbing keep the fixture hermetic: no .gitmodules,
+    // no clone, just a tree entry of mode 160000 pointing at the inner commits.
+    let outer = p.join("outer");
+    std::fs::create_dir(&outer).unwrap();
+    git(&outer, &["init", "-q", "-b", "main"]);
+    git(&outer, &["config", "user.name", "Ada"]);
+    git(&outer, &["config", "user.email", "ada@example.com"]);
+    std::fs::write(outer.join("r.txt"), "readme\n").unwrap();
+    git(&outer, &["add", "."]);
+    git(&outer, &["commit", "-q", "-m", "base"]);
+    let link = format!("160000,{sha1},sub");
+    git(&outer, &["update-index", "--add", "--cacheinfo", &link]);
+    git(&outer, &["commit", "-q", "-m", "add sub"]);
+    let link = format!("160000,{sha2},sub");
+    git(&outer, &["update-index", "--add", "--cacheinfo", &link]);
+    git(&outer, &["commit", "-q", "-m", "bump sub"]);
+
+    let repo = Repo::open(&outer).unwrap();
+    let out = report(&repo, &options("HEAD", false));
+
+    // git log --numstat: base is `1 0 r.txt`, adding the gitlink is `1 0 sub`
+    // (one "Subproject commit" line), repointing it is `1 1 sub`. Totals:
+    // 3 files, +3, -1.
+    let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
+    assert_eq!(
+        cols[2], "3",
+        "gitlink changes should count as changed files:\n{out}"
+    );
+    assert_eq!(cols[3], "+3", "expected +3 insertions:\n{out}");
+    assert_eq!(cols[4], "-1", "expected -1 deletions:\n{out}");
+}
+
+/// Pins a deliberate divergence from git: gitoxide's rename tracker refuses
+/// gitlink entries (they never become `Rewrite` changes), so a renamed
+/// submodule counts as an addition plus a deletion (+1/-1 over 2 files) where
+/// git pairs them into `0 0 old => new` (one file, no lines). If this test
+/// starts failing, gitoxide likely learned to pair gitlinks; numstat should
+/// then handle gitlink `Rewrite`s to match git's single 0/0 file.
+#[test]
+fn gitlink_renames_count_as_add_plus_delete() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    let inner = p.join("inner");
+    std::fs::create_dir(&inner).unwrap();
+    git(&inner, &["init", "-q", "-b", "main"]);
+    git(&inner, &["config", "user.name", "Ada"]);
+    git(&inner, &["config", "user.email", "ada@example.com"]);
+    std::fs::write(inner.join("x.txt"), "x\n").unwrap();
+    git(&inner, &["add", "."]);
+    git(&inner, &["commit", "-q", "-m", "inner"]);
+    let sha = git_out(&inner, &["rev-parse", "HEAD"]);
+
+    let outer = p.join("outer");
+    std::fs::create_dir(&outer).unwrap();
+    git(&outer, &["init", "-q", "-b", "main"]);
+    git(&outer, &["config", "user.name", "Ada"]);
+    git(&outer, &["config", "user.email", "ada@example.com"]);
+    std::fs::write(outer.join("r.txt"), "readme\n").unwrap();
+    git(&outer, &["add", "."]);
+    git(&outer, &["commit", "-q", "-m", "base"]);
+    let link = format!("160000,{sha},sub");
+    git(&outer, &["update-index", "--add", "--cacheinfo", &link]);
+    git(&outer, &["commit", "-q", "-m", "add sub"]);
+    git(&outer, &["update-index", "--force-remove", "sub"]);
+    let link = format!("160000,{sha},newsub");
+    git(&outer, &["update-index", "--add", "--cacheinfo", &link]);
+    git(&outer, &["commit", "-q", "-m", "rename sub"]);
+
+    let repo = Repo::open(&outer).unwrap();
+    let out = report(&repo, &options("HEAD", false));
+
+    // base is 1 file +1, adding the gitlink is 1 file +1, and the rename is
+    // counted as 2 files +1/-1 (git would report 1 file, 0/0).
+    let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
+    assert_eq!(cols[2], "4", "rename should count as add + delete:\n{out}");
+    assert_eq!(cols[3], "+3", "expected +3 insertions:\n{out}");
+    assert_eq!(cols[4], "-1", "expected -1 deletions:\n{out}");
 }
 
 #[test]

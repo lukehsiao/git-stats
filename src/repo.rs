@@ -319,20 +319,26 @@ fn numstat_real(
         .changes()
         .map_err(|e| Error::DiffStats(Box::new(e)))?
         .for_each_to_obtain_tree_with_cache(&new_tree, walk_cache, |change| {
-            match change
-                .diff(count_cache)
-                .ok()
-                .and_then(|mut platform| platform.line_counts().ok())
-            {
-                Some(Some(counts)) => {
-                    files += 1;
-                    insertions += u64::from(counts.insertions);
-                    deletions += u64::from(counts.removals);
+            if let Some((ins, del)) = gitlink_lines(&change) {
+                files += 1;
+                insertions += ins;
+                deletions += del;
+            } else {
+                match change
+                    .diff(count_cache)
+                    .ok()
+                    .and_then(|mut platform| platform.line_counts().ok())
+                {
+                    Some(Some(counts)) => {
+                        files += 1;
+                        insertions += u64::from(counts.insertions);
+                        deletions += u64::from(counts.removals);
+                    }
+                    // A binary change has no line counts (numstat's `-  -  path`)
+                    // but still counts as a changed file, as in `git diff --shortstat`.
+                    Some(None) => files += 1,
+                    None => {}
                 }
-                // A binary change has no line counts (numstat's `-  -  path`)
-                // but still counts as a changed file, as in `git diff --shortstat`.
-                Some(None) => files += 1,
-                None => {}
             }
             // The resource cache only grows; clear it between changes to bound memory.
             count_cache.clear_resource_cache_keep_allocation();
@@ -346,6 +352,25 @@ fn numstat_real(
         deletions,
         files,
     })
+}
+
+/// The numstat of a submodule (gitlink) change, which carries no blob to diff.
+/// git renders the pointer as a one-line `Subproject commit <hash>` pseudo-file,
+/// so an added gitlink is +1, a removed one -1, and a repointed one +1/-1.
+/// Returns `None` for changes not purely between gitlinks; a blob<->gitlink
+/// type change falls through to the regular blob diff.
+fn gitlink_lines(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(u64, u64)> {
+    use gix::object::tree::diff::Change;
+    match *change {
+        Change::Addition { entry_mode, .. } if entry_mode.is_commit() => Some((1, 0)),
+        Change::Deletion { entry_mode, .. } if entry_mode.is_commit() => Some((0, 1)),
+        Change::Modification {
+            previous_entry_mode,
+            entry_mode,
+            ..
+        } if previous_entry_mode.is_commit() && entry_mode.is_commit() => Some((1, 1)),
+        _ => None,
+    }
 }
 
 /// Tips to walk from, and commits to hide, for a revision range.

@@ -87,5 +87,7 @@ porcelain:
 - **Merge commits** count as commits but contribute no line or file changes, matching the default of `git log --numstat`.
 - **Shallow clones** work: commits at the shallow boundary diff against the empty tree, exactly as `git log --numstat` shows them.
   A warning on stderr notes that the truncated history makes the stats differ from a full clone's.
+- **Submodules** count like `git log --numstat`: adding or repointing one is a single changed file whose pointer line is the diff.
+  Two corners diverge from git: a renamed submodule counts as an addition plus a deletion rather than git's paired rename, and a same-path swap between a file and a submodule is not counted.
 - **Line counts** come from gitoxide's diff engine, which can differ from git's by a tiny margin on some hunks (a different but equally valid diff).
   File and net counts match git's rename-aware output.
