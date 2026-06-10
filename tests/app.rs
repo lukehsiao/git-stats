@@ -4,6 +4,7 @@
 use git_stats::app;
 use git_stats::model::{Author, CommitMeta, DiffStat, Options, SortBy, Trailer};
 use git_stats::repo::{NulledCommit, Repo};
+use hegel::generators;
 
 fn commit(name: &str, email: &str, time: i64, diff: DiffStat) -> NulledCommit {
     NulledCommit {
@@ -204,6 +205,65 @@ fn reviews_credit_a_reviewer_once_per_commit() {
         !out.contains("Sole Author"),
         "non-review trailer leaked:\n{out}"
     );
+}
+
+#[test]
+fn reviews_alone_render_without_a_leading_blank_line() {
+    // Reviews ignore the author filter by design, so a filter that matches
+    // nothing empties the stats table while the reviews table still renders.
+    let mut reviewed = commit("Ada", "ada@x", 100, diff(1, 0, 1));
+    reviewed.meta.trailers = vec![Trailer {
+        token: "Reviewed-by".to_string(),
+        value: "Rev Iewer <rev@x>".to_string(),
+    }];
+    let mut opts = options();
+    opts.reviews = true;
+    opts.authors = vec!["matches-nobody".to_string()];
+
+    let out = report(&Repo::create_null(vec![reviewed]), &opts);
+
+    assert!(
+        out.starts_with("Reviewer/Tester"),
+        "reviews table should start at the first line:\n{out:?}"
+    );
+}
+
+/// For any commit set and display options, the report never opens with a
+/// blank line, and a non-empty report ends with exactly one newline. The
+/// separator between the stats and reviews tables must only appear when both
+/// render; the nulled [`Repo`] lets the property cover the whole app layer.
+#[hegel::test]
+fn report_framing_is_stable(tc: hegel::TestCase) {
+    let n = tc.draw(generators::integers::<usize>().max_value(8));
+    let mut commits = Vec::with_capacity(n);
+    for _ in 0..n {
+        let who = tc.draw(generators::sampled_from(vec!["Ada Lovelace", "Bob"]));
+        let mut c = commit(who, "x@x", 100, diff(1, 0, 1));
+        if tc.draw(generators::booleans()) {
+            c.meta.trailers = vec![Trailer {
+                token: "Reviewed-by".to_string(),
+                value: "Rev Iewer <rev@x>".to_string(),
+            }];
+        }
+        commits.push(c);
+    }
+    let mut opts = options();
+    opts.reviews = tc.draw(generators::booleans());
+    opts.email = tc.draw(generators::booleans());
+    // Sometimes filter every commit out, so only the reviews table renders.
+    if tc.draw(generators::booleans()) {
+        opts.authors = vec!["matches-nobody".to_string()];
+    }
+
+    let out = report(&Repo::create_null(commits), &opts);
+
+    assert!(!out.starts_with('\n'), "report opens blank: {out:?}");
+    if !out.is_empty() {
+        assert!(
+            out.ends_with('\n') && !out.ends_with("\n\n"),
+            "report should end with exactly one newline: {out:?}"
+        );
+    }
 }
 
 #[test]

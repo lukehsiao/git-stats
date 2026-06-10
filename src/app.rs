@@ -27,7 +27,11 @@ pub fn run(repo: &Repo, opts: &Options) -> Result<String> {
     if opts.reviews {
         let reviews = aggregate::aggregate_reviews(walked.iter().map(|w| &w.meta), opts.email);
         if !reviews.is_empty() {
-            output.push('\n');
+            // The blank line only separates the tables; without a stats table
+            // the reviews must start at the top.
+            if !output.is_empty() {
+                output.push('\n');
+            }
             output.push_str(&render::render_reviews(&reviews));
             output.push('\n');
         }
