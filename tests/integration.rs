@@ -3,8 +3,9 @@
 //! actual gix-backed implementation (range walking, numstat, trailers).
 
 use std::fmt::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use git_stats::app;
 use git_stats::model::{Options, SortBy};
@@ -451,6 +452,79 @@ fn binary_file_changes_count_as_changed_files() {
     assert_eq!(
         cols[3], "+2",
         "only the text file should contribute lines:\n{out}"
+    );
+}
+
+/// `git stats | head` style usage closes stdout before the report is fully
+/// written. Rust ignores SIGPIPE, so a plain `print!` panics on the resulting
+/// EPIPE; the binary must instead die quietly with the same status a shell
+/// reports when git itself is killed by SIGPIPE (128 + 13).
+#[test]
+fn broken_pipe_exits_quietly() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    git(p, &["init", "-q", "-b", "main"]);
+
+    // Enough single-commit authors that the rendered table exceeds the pipe
+    // buffer (64 KiB), so the write blocks until the reader goes away rather
+    // than racing the reader's exit. Empty commits keep fast-import instant.
+    let mut input = String::new();
+    for i in 0..2000 {
+        let msg = format!("c{i}");
+        write!(
+            input,
+            "commit refs/heads/main\ncommitter Author Number {i:04} \
+             <author{i:04}@example.com> {} +0000\ndata {}\n{msg}\n",
+            1_600_000_000 + i,
+            msg.len(),
+        )
+        .unwrap();
+    }
+    let mut fast_import = Command::new("git")
+        .current_dir(p)
+        .args(["fast-import", "--quiet"])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = fast_import.stdin.take().unwrap();
+    stdin.write_all(input.as_bytes()).unwrap();
+    drop(stdin);
+    assert!(fast_import.wait().unwrap().success(), "fast-import failed");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_git-stats"))
+        .current_dir(p)
+        .arg("--email")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // Close the read end without reading anything; the blocked write sees EPIPE.
+    drop(child.stdout.take());
+    let status = child.wait().unwrap();
+    let mut stderr = String::new();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+
+    assert!(
+        !stderr.contains("panicked"),
+        "panicked on closed stdout:\n{stderr}"
+    );
+    assert_eq!(
+        status.code(),
+        Some(141),
+        "expected git-style SIGPIPE exit, stderr:\n{stderr}"
     );
 }
 
