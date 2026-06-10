@@ -454,6 +454,62 @@ fn binary_file_changes_count_as_changed_files() {
     );
 }
 
+/// `.mailmap` resolution must match `git shortlog -sne`: commits recorded
+/// under an old identity fold into the mapped one, while authors the map
+/// does not mention stay untouched.
+#[test]
+fn mailmap_folds_identities_like_git_shortlog() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.name", "Old Name"]);
+    git(p, &["config", "user.email", "old@example.com"]);
+
+    std::fs::write(p.join("a.txt"), "a\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "as old identity"]);
+
+    std::fs::write(
+        p.join(".mailmap"),
+        "New Name <new@example.com> <old@example.com>\n",
+    )
+    .unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "add mailmap"]);
+
+    // Control: an author the mailmap does not mention.
+    git(p, &["config", "user.name", "Other"]);
+    git(p, &["config", "user.email", "other@example.com"]);
+    std::fs::write(p.join("b.txt"), "b\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "untouched author"]);
+
+    let repo = Repo::open(p).unwrap();
+    let mut opts = options("HEAD", false);
+    opts.email = true;
+    let out = report(&repo, &opts);
+
+    let new = row(&out, "New Name <new@example.com>");
+    assert_eq!(
+        new.split_whitespace().nth(3),
+        Some("2"),
+        "both old-identity commits should fold into the mapped one:\n{out}"
+    );
+    assert!(
+        !out.contains("old@example.com"),
+        "unmapped identity leaked:\n{out}"
+    );
+    assert!(
+        out.contains("Other <other@example.com>"),
+        "unmapped author should pass through:\n{out}"
+    );
+}
+
 #[test]
 fn submodule_changes_count_like_git_numstat() {
     if !git_available() {
