@@ -176,6 +176,55 @@ fn symmetric_difference_range_excludes_the_common_ancestor() {
     );
 }
 
+#[test]
+fn symmetric_difference_hides_every_merge_base() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.name", "Ada"]);
+    git(p, &["config", "user.email", "ada@example.com"]);
+
+    // Criss-cross history: each branch merges the other's first commit, so
+    // br-a...br-b has two merge bases (A and B), not one.
+    std::fs::write(p.join("base.txt"), "base\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "base"]);
+
+    git(p, &["checkout", "-q", "-b", "br-a"]);
+    std::fs::write(p.join("a.txt"), "a\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "A"]);
+    // The merge below advances br-a past A, so remember A itself.
+    git(p, &["tag", "a-tip"]);
+
+    git(p, &["checkout", "-q", "main"]);
+    git(p, &["checkout", "-q", "-b", "br-b"]);
+    std::fs::write(p.join("b.txt"), "b\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "B"]);
+
+    git(p, &["checkout", "-q", "br-a"]);
+    git(p, &["merge", "-q", "--no-ff", "--no-edit", "br-b"]);
+    git(p, &["checkout", "-q", "br-b"]);
+    git(p, &["merge", "-q", "--no-ff", "--no-edit", "a-tip"]);
+
+    let repo = Repo::open(p).unwrap();
+    let out = report(&repo, &options("br-a...br-b", false));
+
+    // git rev-list --count br-a...br-b is 2: only the two cross merges.
+    // Hiding just one merge base leaks the other into the count (3 commits).
+    assert_eq!(
+        total_commits(&out),
+        Some("2"),
+        "criss-cross merge bases must all be hidden:\n{out}"
+    );
+}
+
 /// Three commits on main with both tag flavors on the middle commit: the shape
 /// `git describe`-driven release ranges produce. The tempdir is returned so the
 /// repository outlives the test body.

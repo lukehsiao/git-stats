@@ -350,7 +350,8 @@ fn resolve_range(repo: &gix::Repository, range: &str) -> Result<RangeEnds> {
     if let Some((a, b)) = range.split_once("...") {
         let a = single(repo, default_head(a))?;
         let b = single(repo, default_head(b))?;
-        return Ok((vec![a, b], merge_bases(repo, a, b)));
+        let hidden = merge_bases(repo, a, b, range)?;
+        return Ok((vec![a, b], hidden));
     }
     if let Some((a, b)) = range.split_once("..") {
         let excluded = single(repo, default_head(a))?;
@@ -383,13 +384,24 @@ fn single(repo: &gix::Repository, rev: &str) -> Result<gix::ObjectId> {
         .id)
 }
 
-fn merge_bases(repo: &gix::Repository, a: gix::ObjectId, b: gix::ObjectId) -> Vec<gix::ObjectId> {
-    // Disjoint histories have no merge base; then nothing is hidden and the
-    // symmetric difference is simply everything reachable from either tip.
-    match repo.merge_base(a, b) {
-        Ok(base) => vec![base.detach()],
-        Err(_) => Vec::new(),
-    }
+/// Every merge base of `a` and `b`, hidden from the walk to form the symmetric
+/// difference. Criss-cross histories have several, and git hides them all;
+/// hiding only the "best" one leaks the other bases' ancestries into the walk.
+/// Disjoint histories have none; then nothing is hidden and the symmetric
+/// difference is simply everything reachable from either tip.
+fn merge_bases(
+    repo: &gix::Repository,
+    a: gix::ObjectId,
+    b: gix::ObjectId,
+    range: &str,
+) -> Result<Vec<gix::ObjectId>> {
+    let bases = repo
+        .merge_bases_many(a, &[b])
+        .map_err(|e| Error::WalkRange {
+            range: range.to_string(),
+            source: Box::new(e),
+        })?;
+    Ok(bases.into_iter().map(gix::Id::detach).collect())
 }
 
 /// Parse a `--since`/`--until` style date into seconds since the Unix epoch.
