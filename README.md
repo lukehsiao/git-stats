@@ -91,3 +91,4 @@ porcelain:
   Two corners diverge from git: a renamed submodule counts as an addition plus a deletion rather than git's paired rename, and a same-path swap between a file and a submodule is not counted.
 - **Line counts** come from gitoxide's diff engine, which can differ from git's by a tiny margin on some hunks (a different but equally valid diff).
   File and net counts match git's rename-aware output.
+- **SHA-256 repositories** (`git init --object-format=sha256`) are not supported, as gitoxide cannot read them yet.
