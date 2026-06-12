@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.4
+
+### Patch Changes
+
+- [`e90511a`](https://github.com/lukehsiao/git-stats/commit/e90511a4dedbd83970f3e2ccb1a8ef457c0b8165) - **style**: we now color the header and total rows, rather than just bold (or bold+underline).
+
+  The style when NO_COLOR is set, or being piped to another process remains the same: plain text.
+
+<pre>
+$ git-stats v0.2.3..v0.2.4
+Author      Commits  Changed Files  Insertions  Deletions  Net Δ
+Luke Hsiao        2              4         +32        -20    +12
+Total             2              4         +32        -20    +12
+</pre>
+
 ## 0.2.3
 
 ### Patch Changes
