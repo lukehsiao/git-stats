@@ -13,10 +13,11 @@ test:
 coverage *FLAGS:
     cargo llvm-cov nextest {{FLAGS}}
 
-# Runs clippy on the sources
+# Runs linters on the sources
 [group('dev')]
 check:
 	cargo clippy --all-targets --all-features --locked -- -W clippy::pedantic -D warnings
+	zizmor .
 
 # check security advisories
 [group('dev')]
