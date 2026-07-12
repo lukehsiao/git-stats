@@ -50,6 +50,17 @@ Or, if you use [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall):
 cargo binstall git-stats
 ```
 
+### From the AUR
+
+On Arch Linux, install from the [AUR](https://aur.archlinux.org/) using your preferred helper (e.g. [`paru`](https://github.com/Morganamilo/paru) or [`yay`](https://github.com/Jguer/yay)):
+
+```
+paru -S git-stats       # builds from source
+paru -S git-stats-bin   # prebuilt binary
+```
+
+The two packages conflict with each other, so only one may be installed at a time.
+
 ## Usage
 
 ```
