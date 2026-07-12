@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.5
+
+### Patch Changes
+
+- [`497e3ac`](https://github.com/lukehsiao/git-stats/commit/497e3acb958ca213c4e935571c399aa8c0259c25) - **feature**: `git-stats` and `git-stats-bin` are now available on the AUR.
+
+<pre>
+$ git-stats v0.2.4..v0.2.5
+Author           Commits  Changed Files  Insertions  Deletions  Net Δ
+Luke Hsiao             6             21        +576       -460   +116
+dependabot[bot]        2              6         +12        -12      0
+Total                  8             27        +588       -472   +116
+</pre>
+
 ## 0.2.4
 
 ### Patch Changes
