@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.6
+
+### Patch Changes
+
+- [`0c68d97`](https://github.com/lukehsiao/git-stats/commit/0c68d976b8389e72aeaa7d54b6d76bf6126aca0e) - **performance**: add release-build optimizations that result in a small (~2%) runtime improvement and -35% binary size.
+
+<pre>
+$ git-stats v0.2.5..v0.2.6
+Author      Commits  Changed Files  Insertions  Deletions  Net Δ
+Luke Hsiao        3              8         +77        -59    +18
+Total             3              8         +77        -59    +18
+</pre>
+
 ## 0.2.5
 
 ### Patch Changes
