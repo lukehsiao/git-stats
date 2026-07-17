@@ -44,6 +44,13 @@ a pure-Rust implementation of `git`.
 cargo install git-stats --locked
 ```
 
+Since you are compiling from source anyway, you can opt into CPU-specific
+optimizations that the prebuilt binaries cannot use:
+
+```
+RUSTFLAGS="-C target-cpu=native" cargo install git-stats --locked
+```
+
 Or, if you use [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall):
 
 ```
