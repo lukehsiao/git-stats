@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.7
+
+### Patch Changes
+
+- [`aabed5c`](https://github.com/lukehsiao/git-stats/commit/aabed5cfe1462a8d33f5a54117603d6f04a4ca97) - **fix**: stop pinning the AUR `git-stats-bin` package to GitHub's auto-generated `archive/` tarball.
+  
+  Release archives now carry `LICENSE.md` and `README.md` alongside the binary, so the `-bin` PKGBUILD no longer needs the `archive/` tarball, whose bytes are not stable over time and could have started failing checksum validation without any release changing.
+
+- [`e037a1b`](https://github.com/lukehsiao/git-stats/commit/e037a1bf2ad32a2a7b987d7c26387a7ce8a4744c) - **fix**: download AUR `git-stats-bin` release tarballs to version-suffixed filenames.
+  
+  The release assets are named without a version, so makepkg's source cache collided across releases: a tarball cached from an older install shadowed the new download and failed checksum validation, breaking `paru -S git-stats-bin` on upgrade.
+
+<pre>
+$ git-stats v0.2.6..v0.2.7
+Author           Commits  Changed Files  Insertions  Deletions  Net Δ
+Luke Hsiao             6             23        +576      -1094   -518
+dependabot[bot]        3             10         +15        -15      0
+Total                  9             33        +591      -1109   -518
+</pre>
+
 ## 0.2.6
 
 ### Patch Changes

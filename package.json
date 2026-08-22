@@ -1,6 +1,6 @@
 {
   "name": "git-stats",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.0",
