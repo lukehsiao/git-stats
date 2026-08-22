@@ -68,6 +68,14 @@ paru -S git-stats-bin   # prebuilt binary
 
 The two packages conflict with each other, so only one may be installed at a time.
 
+### With mise
+
+[mise](https://mise.jdx.dev/) can install a prebuilt binary directly from the GitHub release, verifying its checksum and SLSA provenance:
+
+```
+mise use -g github:lukehsiao/git-stats
+```
+
 ## Usage
 
 ```
