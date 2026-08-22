@@ -25,7 +25,7 @@ mod tests {
     use hegel::generators::{self, Generator};
 
     #[hegel::composite]
-    fn stat_list(tc: hegel::TestCase) -> Vec<Stat> {
+    fn stat_list(tc: &hegel::TestCase) -> Vec<Stat> {
         let n = tc.draw(generators::integers::<usize>().max_value(100));
         let mut stats = Vec::with_capacity(n);
         for _ in 0..n {

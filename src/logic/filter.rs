@@ -45,7 +45,7 @@ mod tests {
     use hegel::generators;
 
     #[hegel::composite]
-    fn commit_metas(tc: hegel::TestCase) -> Vec<CommitMeta> {
+    fn commit_metas(tc: &hegel::TestCase) -> Vec<CommitMeta> {
         let n = tc.draw(generators::integers::<usize>().max_value(100));
         let mut metas = Vec::with_capacity(n);
         for _ in 0..n {

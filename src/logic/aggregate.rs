@@ -144,7 +144,7 @@ mod tests {
     /// sums of up to 200 commits comfortably inside `u64` and `i64`, so the
     /// test's own arithmetic cannot overflow before the code under test runs.
     #[hegel::composite]
-    fn commit_list(tc: hegel::TestCase) -> Vec<CommitStat> {
+    fn commit_list(tc: &hegel::TestCase) -> Vec<CommitStat> {
         const NAMES: [&str; 5] = ["Ada Lovelace", "Grace Hopper", "Bob", "Carol Shaw", "Don"];
         let n = tc.draw(generators::integers::<usize>().max_value(200));
         let mut commits = Vec::with_capacity(n);
