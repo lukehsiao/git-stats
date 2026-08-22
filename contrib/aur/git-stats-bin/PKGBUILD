@@ -6,7 +6,7 @@ pkgdesc='A tool for getting aggregated commit stats (prebuilt binary)'
 arch=('x86_64' 'aarch64' 'armv7h')
 url='https://github.com/lukehsiao/git-stats'
 license=('BlueOak-1.0.0')
-depends=('gcc-libs')
+depends=('glibc' 'libgcc')
 provides=("git-stats=$pkgver")
 conflicts=('git-stats')
 
