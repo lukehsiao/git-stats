@@ -10,20 +10,19 @@ depends=('gcc-libs')
 provides=("git-stats=$pkgver")
 conflicts=('git-stats')
 
+# The release tarballs carry LICENSE.md and README.md alongside the binary, so
+# no GitHub archive/ tarball is needed; those are not byte-stable over time.
 _relurl="https://github.com/lukehsiao/git-stats/releases/download/v$pkgver"
-source=("git-stats-$pkgver.tar.gz::https://github.com/lukehsiao/git-stats/archive/v$pkgver.tar.gz")
 source_x86_64=("git-stats-$pkgver-x86_64-unknown-linux-gnu.tar.gz::$_relurl/git-stats-x86_64-unknown-linux-gnu.tar.gz")
 source_aarch64=("git-stats-$pkgver-aarch64-unknown-linux-gnu.tar.gz::$_relurl/git-stats-aarch64-unknown-linux-gnu.tar.gz")
 source_armv7h=("git-stats-$pkgver-armv7-unknown-linux-gnueabihf.tar.gz::$_relurl/git-stats-armv7-unknown-linux-gnueabihf.tar.gz")
 
-sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
 sha256sums_x86_64=('0000000000000000000000000000000000000000000000000000000000000000')
 sha256sums_aarch64=('0000000000000000000000000000000000000000000000000000000000000000')
 sha256sums_armv7h=('0000000000000000000000000000000000000000000000000000000000000000')
 
 package() {
-    install -Dm755 "$srcdir/git-stats" "$pkgdir/usr/bin/git-stats"
-    cd "git-stats-$pkgver"
-    install -Dm644 LICENSE.md "$pkgdir/usr/share/licenses/$pkgname/LICENSE.md"
-    install -Dm644 README.md  "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm755 "$srcdir/git-stats"  "$pkgdir/usr/bin/git-stats"
+    install -Dm644 "$srcdir/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/LICENSE.md"
+    install -Dm644 "$srcdir/README.md"  "$pkgdir/usr/share/doc/$pkgname/README.md"
 }
