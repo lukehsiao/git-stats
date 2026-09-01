@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.8
+
+### Patch Changes
+
+- [`57da47b`](https://github.com/lukehsiao/git-stats/commit/57da47b95172e4d78410bdaa790e6441c4af8a69) - Drop the `tabled` dependency and lay out the two tables directly.
+  
+  It pulled in 12 transitive crates, one of them the unmaintained `proc-macro-error2` (RUSTSEC-2026-0173), to produce a borderless table with two-space column gaps. We can do that ourselves. The output remains byte-identical.
+
+- [`74b08f1`](https://github.com/lukehsiao/git-stats/commit/74b08f169e2f50af94dc83610743a614ffcff318) - A renamed submodule now counts as one changed file with no line changes, matching `git log --numstat`, which reports it as `0 0 old => new`.
+  
+  It previously counted as an addition plus a deletion over two files, because `gitoxide`'s rename tracker did not pair gitlink entries and the two sides arrived as separate changes. Renaming a submodule and repointing it in the same commit still counts as two files with one insertion and one deletion, which is also what git reports.
+
+<pre>
+$ git-stats v0.2.7..v0.2.8
+Author           Commits  Changed Files  Insertions  Deletions  Net Δ
+dependabot[bot]        5              8         +10        -10      0
+Luke Hsiao             3             13        +403       -332    +71
+Total                  8             21        +413       -342    +71
+</pre>
+
 ## 0.2.7
 
 ### Patch Changes
