@@ -2,7 +2,6 @@
 //! infrastructure. Nothing here performs I/O or depends on gix.
 
 use clap::ValueEnum;
-use tabled::Tabled;
 
 /// A commit author, resolved through `.mailmap` to match git's `%aN`/`%aE`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -75,37 +74,26 @@ pub struct Options {
 }
 
 /// Aggregated per-author statistics. Doubles as one row of the stats table.
-#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stat {
-    #[tabled(rename = "Author")]
     pub author: String,
-    #[tabled(rename = "Commits")]
     pub commits: u64,
-    #[tabled(rename = "Changed Files")]
     pub num_files: u64,
-    #[tabled(rename = "Insertions", display = "display_add")]
     pub insertions: u64,
-    #[tabled(rename = "Deletions", display = "display_del")]
     pub deletions: u64,
-    #[tabled(rename = "Net Δ", display = "display_net")]
     pub net: i64,
 }
 
 /// Aggregated per-reviewer statistics. Doubles as one row of the reviews table.
-#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Review {
-    #[tabled(rename = "Reviewer/Tester")]
     pub author: String,
-    #[tabled(rename = "Commits")]
     pub commits: u64,
 }
 
-// These take `&u64`/`&i64` rather than the values by copy because tabled's
-// `display` attribute requires a by-reference signature.
-
 /// Format a deletion count: `0` stays `0`, otherwise it is shown as `-n`.
 #[must_use]
-pub fn display_del(n: &u64) -> String {
+pub fn display_del(n: u64) -> String {
     match n {
         0 => "0".to_string(),
         n => format!("-{n}"),
@@ -114,7 +102,7 @@ pub fn display_del(n: &u64) -> String {
 
 /// Format an insertion count: `0` stays `0`, otherwise it is shown as `+n`.
 #[must_use]
-pub fn display_add(n: &u64) -> String {
+pub fn display_add(n: u64) -> String {
     match n {
         0 => "0".to_string(),
         n => format!("+{n}"),
@@ -124,8 +112,8 @@ pub fn display_add(n: &u64) -> String {
 /// Format a net line delta: positive values get a leading `+`, zero and
 /// negative values render with their natural sign (`0`, `-5`).
 #[must_use]
-pub fn display_net(n: &i64) -> String {
-    if *n > 0 {
+pub fn display_net(n: i64) -> String {
+    if n > 0 {
         format!("+{n}")
     } else {
         format!("{n}")
@@ -140,7 +128,7 @@ mod tests {
     #[hegel::test]
     fn display_add_signs_nonzero(tc: hegel::TestCase) {
         let n = tc.draw(generators::integers::<u64>());
-        let rendered = display_add(&n);
+        let rendered = display_add(n);
         if n == 0 {
             assert_eq!(rendered, "0");
         } else {
@@ -151,7 +139,7 @@ mod tests {
     #[hegel::test]
     fn display_del_signs_nonzero(tc: hegel::TestCase) {
         let n = tc.draw(generators::integers::<u64>());
-        let rendered = display_del(&n);
+        let rendered = display_del(n);
         if n == 0 {
             assert_eq!(rendered, "0");
         } else {
@@ -165,7 +153,7 @@ mod tests {
     #[hegel::test]
     fn display_net_signs_and_never_panics(tc: hegel::TestCase) {
         let n = tc.draw(generators::integers::<i64>());
-        let rendered = display_net(&n);
+        let rendered = display_net(n);
         if n > 0 {
             assert_eq!(rendered, format!("+{n}"));
         } else {
