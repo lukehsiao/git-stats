@@ -362,7 +362,9 @@ fn numstat_real(
 
 /// The numstat of a submodule (gitlink) change, which carries no blob to diff.
 /// git renders the pointer as a one-line `Subproject commit <hash>` pseudo-file,
-/// so an added gitlink is +1, a removed one -1, and a repointed one +1/-1.
+/// so an added gitlink is +1, a removed one -1, and a repointed one +1/-1. A
+/// renamed gitlink is paired into a single file whose line only changes when the
+/// commit it points to also changed, matching git's `0 0 old => new`.
 /// Returns `None` for changes not purely between gitlinks; a blob<->gitlink
 /// type change falls through to the regular blob diff.
 fn gitlink_lines(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(u64, u64)> {
@@ -375,6 +377,19 @@ fn gitlink_lines(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option
             entry_mode,
             ..
         } if previous_entry_mode.is_commit() && entry_mode.is_commit() => Some((1, 1)),
+        Change::Rewrite {
+            source_entry_mode,
+            source_id,
+            entry_mode,
+            id,
+            ..
+        } if source_entry_mode.is_commit() && entry_mode.is_commit() => {
+            if source_id.detach() == id.detach() {
+                Some((0, 0))
+            } else {
+                Some((1, 1))
+            }
+        }
         _ => None,
     }
 }
@@ -452,7 +467,7 @@ fn merge_bases(
 /// Returns an error if the input is not a recognized date format.
 pub fn parse_date(input: Option<&str>) -> Result<Option<i64>> {
     let Some(s) = input else { return Ok(None) };
-    let now = std::time::SystemTime::now();
+    let now = gix::date::Zoned::now();
     let time = gix::date::parse(s, Some(now)).map_err(|e| Error::InvalidDate {
         input: s.to_string(),
         message: e.to_string(),

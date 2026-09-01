@@ -681,14 +681,11 @@ fn submodule_changes_count_like_git_numstat() {
     assert_eq!(cols[4], "-1", "expected -1 deletions:\n{out}");
 }
 
-/// Pins a deliberate divergence from git: gitoxide's rename tracker refuses
-/// gitlink entries (they never become `Rewrite` changes), so a renamed
-/// submodule counts as an addition plus a deletion (+1/-1 over 2 files) where
-/// git pairs them into `0 0 old => new` (one file, no lines). If this test
-/// starts failing, gitoxide likely learned to pair gitlinks; numstat should
-/// then handle gitlink `Rewrite`s to match git's single 0/0 file.
+/// A renamed submodule is paired by the rename tracker into git's single
+/// `0 0 old => new` entry, so it counts as one changed file with no line
+/// changes rather than as an addition plus a deletion.
 #[test]
-fn gitlink_renames_count_as_add_plus_delete() {
+fn gitlink_renames_count_as_one_unchanged_file() {
     if !git_available() {
         eprintln!("git not available; skipping integration test");
         return;
@@ -711,6 +708,9 @@ fn gitlink_renames_count_as_add_plus_delete() {
     git(&outer, &["init", "-q", "-b", "main"]);
     git(&outer, &["config", "user.name", "Ada"]);
     git(&outer, &["config", "user.email", "ada@example.com"]);
+    // The walk reads its diff options from repository config, so pin rename
+    // detection rather than inheriting whatever the developer set globally.
+    git(&outer, &["config", "diff.renames", "true"]);
     std::fs::write(outer.join("r.txt"), "readme\n").unwrap();
     git(&outer, &["add", "."]);
     git(&outer, &["commit", "-q", "-m", "base"]);
@@ -726,11 +726,11 @@ fn gitlink_renames_count_as_add_plus_delete() {
     let out = report(&repo, &options("HEAD", false));
 
     // base is 1 file +1, adding the gitlink is 1 file +1, and the rename is
-    // counted as 2 files +1/-1 (git would report 1 file, 0/0).
+    // 1 file whose `Subproject commit` line is unchanged.
     let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
-    assert_eq!(cols[2], "4", "rename should count as add + delete:\n{out}");
-    assert_eq!(cols[3], "+3", "expected +3 insertions:\n{out}");
-    assert_eq!(cols[4], "-1", "expected -1 deletions:\n{out}");
+    assert_eq!(cols[2], "3", "rename should count as one file:\n{out}");
+    assert_eq!(cols[3], "+2", "expected +2 insertions:\n{out}");
+    assert_eq!(cols[4], "0", "expected no deletions:\n{out}");
 }
 
 #[test]

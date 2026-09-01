@@ -74,8 +74,8 @@ mod tests {
 
     #[hegel::test]
     fn sort_preserves_the_multiset(tc: hegel::TestCase) {
-        let original = tc.draw(stat_list());
-        let by = tc.draw(any_sort_by());
+        let original = tc.draw(stat_list().print_as_debug());
+        let by = tc.draw(any_sort_by().print_as_debug());
         let reverse = tc.draw(generators::booleans());
         let mut sorted = original.clone();
         sort_stats(&mut sorted, by, reverse);
@@ -85,8 +85,8 @@ mod tests {
     /// The default (non-reversed) order is non-increasing in the chosen column.
     #[hegel::test]
     fn default_order_is_descending(tc: hegel::TestCase) {
-        let mut stats = tc.draw(stat_list());
-        let by = tc.draw(any_sort_by());
+        let mut stats = tc.draw(stat_list().print_as_debug());
+        let by = tc.draw(any_sort_by().print_as_debug());
         sort_stats(&mut stats, by, false);
         for w in stats.windows(2) {
             let (a, b) = (&w[0], &w[1]);

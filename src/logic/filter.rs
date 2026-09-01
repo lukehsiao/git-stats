@@ -42,7 +42,7 @@ pub fn keep_indices<'a>(
 mod tests {
     use super::*;
     use crate::model::Author;
-    use hegel::generators;
+    use hegel::generators::{self, Generator};
 
     #[hegel::composite]
     fn commit_metas(tc: &hegel::TestCase) -> Vec<CommitMeta> {
@@ -71,14 +71,14 @@ mod tests {
 
     #[hegel::test]
     fn no_filters_keeps_everything(tc: hegel::TestCase) {
-        let metas = tc.draw(commit_metas());
+        let metas = tc.draw(commit_metas().print_as_debug());
         let kept = keep_indices(metas.iter(), &[], None, None);
         assert_eq!(kept, (0..metas.len()).collect::<Vec<_>>());
     }
 
     #[hegel::test]
     fn kept_indices_are_sorted_and_in_range(tc: hegel::TestCase) {
-        let metas = tc.draw(commit_metas());
+        let metas = tc.draw(commit_metas().print_as_debug());
         let since = tc.draw(generators::optional(generators::integers::<i64>()));
         let until = tc.draw(generators::optional(generators::integers::<i64>()));
         let kept = keep_indices(metas.iter(), &[], since, until);
@@ -89,7 +89,7 @@ mod tests {
     /// A commit is kept exactly when its committer time lies in `[since, until]`.
     #[hegel::test]
     fn date_window_membership(tc: hegel::TestCase) {
-        let metas = tc.draw(commit_metas());
+        let metas = tc.draw(commit_metas().print_as_debug());
         let since = tc.draw(generators::optional(generators::integers::<i64>()));
         let until = tc.draw(generators::optional(generators::integers::<i64>()));
         let kept = keep_indices(metas.iter(), &[], since, until);
@@ -103,7 +103,7 @@ mod tests {
     /// With one author pattern, kept commits are exactly those whose ident matches.
     #[hegel::test]
     fn author_filter_matches_ident(tc: hegel::TestCase) {
-        let metas = tc.draw(commit_metas());
+        let metas = tc.draw(commit_metas().print_as_debug());
         let patterns = vec![Regex::new("^a").unwrap()];
         let kept = keep_indices(metas.iter(), &patterns, None, None);
         for (i, m) in metas.iter().enumerate() {

@@ -136,7 +136,7 @@ fn net(insertions: u64, deletions: u64) -> i64 {
 mod tests {
     use super::*;
     use crate::model::DiffStat;
-    use hegel::generators;
+    use hegel::generators::{self, Generator};
     use std::collections::{BTreeMap, BTreeSet};
 
     /// A small author pool forces grouping; the names include multi-word
@@ -176,7 +176,7 @@ mod tests {
 
     #[hegel::test]
     fn totals_match_independent_sums(tc: hegel::TestCase) {
-        let commits = tc.draw(commit_list());
+        let commits = tc.draw(commit_list().print_as_debug());
         let totals = compute_totals(&aggregate(&commits));
 
         let exp_ins: u64 = commits.iter().map(|c| c.diff.insertions).sum();
@@ -194,7 +194,7 @@ mod tests {
 
     #[hegel::test]
     fn per_stat_net_is_insertions_minus_deletions(tc: hegel::TestCase) {
-        let commits = tc.draw(commit_list());
+        let commits = tc.draw(commit_list().print_as_debug());
         for s in aggregate(&commits) {
             assert_eq!(
                 s.net,
@@ -205,14 +205,14 @@ mod tests {
 
     #[hegel::test]
     fn one_row_per_distinct_author(tc: hegel::TestCase) {
-        let commits = tc.draw(commit_list());
+        let commits = tc.draw(commit_list().print_as_debug());
         let distinct: BTreeSet<&str> = commits.iter().map(|c| c.author_key.as_str()).collect();
         assert_eq!(aggregate(&commits).len(), distinct.len());
     }
 
     #[hegel::test]
     fn aggregation_is_order_independent(tc: hegel::TestCase) {
-        let commits = tc.draw(commit_list());
+        let commits = tc.draw(commit_list().print_as_debug());
         let forward = aggregate(&commits);
         let mut reversed = commits;
         reversed.reverse();
