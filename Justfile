@@ -133,25 +133,12 @@ version *args:
 	just _sync-versions
 	just _append-git-stats
 
-# Publish a new version on crates.io
+# The release workflow then publishes to crates.io through trusted publishing,
+# in a job of its own, so no crates.io credential exists outside that job.
+# Tag the new version and cut its GitHub release
 [group('release')]
 publish:
-	#!/usr/bin/env bash
-	set -euo pipefail
-
-	# changeset publish reports created git tags as NDJSON to CHANGESETS_OUTPUT
-	# rather than on stdout. changesets/action sets this variable itself, so
-	# only fall back to a scratch file when running the recipe by hand.
-	: "${CHANGESETS_OUTPUT:=$(mktemp)}"
-	export CHANGESETS_OUTPUT
-
 	pnpm changeset publish
-
-	if jaq -e -s 'any(.[]; .type == "git-tag")' "$CHANGESETS_OUTPUT" > /dev/null; then
-	    cargo publish
-	else
-	    echo "No new version published by changesets, skipping cargo publish."
-	fi
 
 # Show pending changesets and expected version bumps.
 [group('release')]
