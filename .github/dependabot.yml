@@ -8,9 +8,17 @@ updates:
         prefix: "ci(deps)"
       cooldown:
         default-days: 7
+      groups:
+        github-actions:
+          patterns:
+            - "*"
     - package-ecosystem: "cargo"
       directory: "/"
       schedule:
           interval: "monthly"
       cooldown:
         default-days: 7
+      groups:
+        cargo:
+          patterns:
+            - "*"
