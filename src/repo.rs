@@ -233,7 +233,7 @@ fn walk_real(
         // accessors on `gix::Commit` would each rescan the raw bytes.
         let commit = commit.decode().map_err(|e| Error::DecodeCommit {
             id: info.id.to_string(),
-            source: Box::new(e),
+            source: e.into(),
         })?;
         let is_boundary = shallow
             .as_ref()
@@ -253,14 +253,10 @@ fn commit_meta(
     mailmap: &gix::mailmap::Snapshot,
     need_trailers: bool,
 ) -> Result<CommitMeta> {
-    let author = mailmap.resolve(
-        commit
-            .author()
-            .map_err(|e| Error::ReadCommit(Box::new(e)))?,
-    );
+    let author = mailmap.resolve(commit.author().map_err(|e| Error::ReadCommit(e.into()))?);
     let time_seconds = commit
         .committer()
-        .map_err(|e| Error::ReadCommit(Box::new(e)))?
+        .map_err(|e| Error::ReadCommit(e.into()))?
         .seconds();
     let trailers = if need_trailers {
         parse_trailers(commit)
@@ -348,7 +344,7 @@ fn numstat_real(
             }
             // The resource cache only grows; clear it between changes to bound memory.
             count_cache.clear_resource_cache_keep_allocation();
-            Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
+            Ok(std::ops::ControlFlow::Continue(()))
         })
         .map_err(|e| Error::DiffStats(Box::new(e)))?;
     walk_cache.clear_resource_cache_keep_allocation();
