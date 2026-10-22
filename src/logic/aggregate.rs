@@ -76,7 +76,7 @@ pub fn compute_totals(stats: &[Stat]) -> Stat {
 /// Count, per reviewer, the commits they signed off on via Acked-by / Tested-by
 /// / Reviewed-by trailers. A reviewer is credited at most once per commit even
 /// if they appear in several of those trailers. Returned in descending commit
-/// count, ties broken by first-seen order.
+/// count, ties sorted by reviewer name, A to Z.
 #[must_use]
 pub fn aggregate_reviews<'a>(
     metas: impl IntoIterator<Item = &'a CommitMeta>,
@@ -108,7 +108,11 @@ pub fn aggregate_reviews<'a>(
             reviews[i].commits = reviews[i].commits.saturating_add(1);
         }
     }
-    reviews.sort_by_key(|r| std::cmp::Reverse(r.commits));
+    reviews.sort_by(|a, b| {
+        b.commits
+            .cmp(&a.commits)
+            .then_with(|| a.author.cmp(&b.author))
+    });
     reviews
 }
 
@@ -135,7 +139,7 @@ fn net(insertions: u64, deletions: u64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::DiffStat;
+    use crate::model::{DiffStat, Trailer};
     use hegel::generators::{self, Generator};
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -218,6 +222,61 @@ mod tests {
         reversed.reverse();
         let backward = aggregate(&reversed);
         assert_eq!(fingerprint(&forward), fingerprint(&backward));
+    }
+
+    /// Commits whose trailers credit reviewers from a small pool, so ties in
+    /// commit count are common. The pool has names that differ only in case.
+    #[hegel::composite]
+    fn reviewed_commits(tc: &hegel::TestCase) -> Vec<CommitMeta> {
+        const REVIEWERS: [&str; 4] = ["Zed <z@x>", "Ada <a@x>", "Bob <b@x>", "ada <l@x>"];
+        let n = tc.draw(generators::integers::<usize>().max_value(20));
+        let mut metas = Vec::with_capacity(n);
+        for _ in 0..n {
+            let picks = tc.draw(
+                generators::vecs(generators::integers::<usize>().max_value(REVIEWERS.len() - 1))
+                    .max_size(3),
+            );
+            metas.push(CommitMeta {
+                author: Author {
+                    name: "Author".to_string(),
+                    email: "author@x".to_string(),
+                },
+                time_seconds: 0,
+                trailers: picks
+                    .into_iter()
+                    .map(|i| Trailer {
+                        token: "Reviewed-by".to_string(),
+                        value: REVIEWERS[i].to_string(),
+                    })
+                    .collect(),
+            });
+        }
+        metas
+    }
+
+    /// The reviews table must not depend on the order the walk yields commits
+    /// in, which differs between git and jj.
+    #[hegel::test]
+    fn reviews_are_order_independent(tc: hegel::TestCase) {
+        let mut metas = tc.draw(reviewed_commits().print_as_debug());
+        let email = tc.draw(generators::booleans());
+        let forward = aggregate_reviews(&metas, email);
+        metas.reverse();
+        assert_eq!(aggregate_reviews(&metas, email), forward);
+    }
+
+    /// Reviewers come in descending commit count, and ties come A to Z.
+    #[hegel::test]
+    fn reviews_sort_by_count_then_name(tc: hegel::TestCase) {
+        let metas = tc.draw(reviewed_commits().print_as_debug());
+        let email = tc.draw(generators::booleans());
+        for w in aggregate_reviews(&metas, email).windows(2) {
+            let (a, b) = (&w[0], &w[1]);
+            assert!(
+                a.commits > b.commits || (a.commits == b.commits && a.author < b.author),
+                "{a:?} then {b:?}"
+            );
+        }
     }
 
     /// `reviewer_key` keeps a full multi-word name (spaces and all). With an

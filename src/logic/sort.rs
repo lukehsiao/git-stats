@@ -1,22 +1,23 @@
-use std::cmp::Reverse;
-
 use crate::model::{SortBy, Stat};
 
 /// Sort per-author rows by the chosen column, descending by default. With
-/// `reverse`, the order is flipped to ascending. The sort is stable, so ties
-/// keep their relative input order.
+/// `reverse`, the column order is flipped to ascending. Ties sort by author
+/// name, A to Z in both directions, so the order does not depend on which
+/// commit the walk saw first. Authors are unique, as `aggregate` makes them,
+/// so no two rows compare equal.
 pub fn sort_stats(stats: &mut [Stat], sort: SortBy, reverse: bool) {
-    match sort {
-        SortBy::Author => stats.sort_by(|a, b| b.author.cmp(&a.author)),
-        SortBy::Commits => stats.sort_by_key(|s| Reverse(s.commits)),
-        SortBy::Files => stats.sort_by_key(|s| Reverse(s.num_files)),
-        SortBy::Insertions => stats.sort_by_key(|s| Reverse(s.insertions)),
-        SortBy::Deletions => stats.sort_by_key(|s| Reverse(s.deletions)),
-        SortBy::Net => stats.sort_by_key(|s| Reverse(s.net)),
-    }
-    if reverse {
-        stats.reverse();
-    }
+    stats.sort_by(|a, b| {
+        let column = match sort {
+            SortBy::Author => b.author.cmp(&a.author),
+            SortBy::Commits => b.commits.cmp(&a.commits),
+            SortBy::Files => b.num_files.cmp(&a.num_files),
+            SortBy::Insertions => b.insertions.cmp(&a.insertions),
+            SortBy::Deletions => b.deletions.cmp(&a.deletions),
+            SortBy::Net => b.net.cmp(&a.net),
+        };
+        let column = if reverse { column.reverse() } else { column };
+        column.then_with(|| a.author.cmp(&b.author))
+    });
 }
 
 #[cfg(test)]
@@ -82,23 +83,71 @@ mod tests {
         assert_eq!(canonical(&original), canonical(&sorted));
     }
 
-    /// The default (non-reversed) order is non-increasing in the chosen column.
+    /// With unique authors, as `aggregate` produces them, the input order
+    /// cannot change the output. git and jj walk commits in different orders.
     #[hegel::test]
-    fn default_order_is_descending(tc: hegel::TestCase) {
+    fn sort_is_independent_of_input_order(tc: hegel::TestCase) {
+        let mut stats = tc.draw(stat_list().print_as_debug());
+        let mut seen = std::collections::HashSet::new();
+        stats.retain(|s| seen.insert(s.author.clone()));
+        let by = tc.draw(any_sort_by().print_as_debug());
+        let reverse = tc.draw(generators::booleans());
+        let mut forward = stats.clone();
+        sort_stats(&mut forward, by, reverse);
+        stats.reverse();
+        sort_stats(&mut stats, by, reverse);
+        assert_eq!(stats, forward);
+    }
+
+    /// How `a` compares to `b` in the column `by` names, ascending.
+    fn column(a: &Stat, b: &Stat, by: SortBy) -> std::cmp::Ordering {
+        match by {
+            SortBy::Author => a.author.cmp(&b.author),
+            SortBy::Commits => a.commits.cmp(&b.commits),
+            SortBy::Files => a.num_files.cmp(&b.num_files),
+            SortBy::Insertions => a.insertions.cmp(&b.insertions),
+            SortBy::Deletions => a.deletions.cmp(&b.deletions),
+            SortBy::Net => a.net.cmp(&b.net),
+        }
+    }
+
+    /// The chosen column is non-increasing by default and non-decreasing
+    /// with `reverse`.
+    #[hegel::test]
+    fn column_order_follows_the_direction(tc: hegel::TestCase) {
         let mut stats = tc.draw(stat_list().print_as_debug());
         let by = tc.draw(any_sort_by().print_as_debug());
-        sort_stats(&mut stats, by, false);
+        let reverse = tc.draw(generators::booleans());
+        sort_stats(&mut stats, by, reverse);
+        let out_of_order = if reverse {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Less
+        };
         for w in stats.windows(2) {
             let (a, b) = (&w[0], &w[1]);
-            let descending = match by {
-                SortBy::Author => a.author >= b.author,
-                SortBy::Commits => a.commits >= b.commits,
-                SortBy::Files => a.num_files >= b.num_files,
-                SortBy::Insertions => a.insertions >= b.insertions,
-                SortBy::Deletions => a.deletions >= b.deletions,
-                SortBy::Net => a.net >= b.net,
-            };
-            assert!(descending, "not descending for {by:?}: {a:?} then {b:?}");
+            assert_ne!(
+                column(a, b, by),
+                out_of_order,
+                "{by:?} reverse={reverse}: {a:?} then {b:?}"
+            );
+        }
+    }
+
+    /// Rows that tie in the chosen column are in author order, A to Z, in
+    /// both directions.
+    #[hegel::test]
+    fn ties_are_in_author_order(tc: hegel::TestCase) {
+        let mut stats = tc.draw(stat_list().print_as_debug());
+        let by = tc.draw(any_sort_by().print_as_debug());
+        let reverse = tc.draw(generators::booleans());
+        sort_stats(&mut stats, by, reverse);
+        for w in stats.windows(2) {
+            let (a, b) = (&w[0], &w[1]);
+            assert!(
+                column(a, b, by).is_ne() || a.author <= b.author,
+                "tie out of author order for {by:?}: {a:?} then {b:?}"
+            );
         }
     }
 }
