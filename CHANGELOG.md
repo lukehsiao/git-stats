@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.0
+
+### Minor Changes
+
+- [#112](https://github.com/lukehsiao/git-stats/pull/112) [`55baa1b`](https://github.com/lukehsiao/git-stats/commit/55baa1b2a11f9225b4a42458a2b12d26bec90485) - **feat**: Support jj workspaces, colocated or not. Inside one, `[revision-range]` is a jj revset (change IDs, bookmarks, `trunk()..@`), and it defaults to `::@`, so uncommitted edits in the working-copy commit count.
+  
+  `git-stats` asks `jj` (0.36 or newer) to evaluate the revset and still reads and diffs the commits with gitoxide. Conflicted commits, and commits on top of them, take their counts from jj's own diff, because jj stores a conflict as a git tree of `.jjconflict-*` directories. `--vcs git` keeps the old behavior in a colocated workspace, for scripts that pass git ranges like `origin..HEAD`.
+
+### Patch Changes
+
+- [#112](https://github.com/lukehsiao/git-stats/pull/112) [`f172f9b`](https://github.com/lukehsiao/git-stats/commit/f172f9b5155f83f9be93d4363ed7a79d8cdec9d1) - **fix**: Reviewer rows now merge trailers that differ only in whitespace, such as `Ada  <ada@example.com>` and `Ada <ada@example.com>` under `--email`, or `Ada<ada@example.com>` without it. A trailer with only `<ada@example.com>` now shows the email instead of the raw `<...>` text.
+
+- [#112](https://github.com/lukehsiao/git-stats/pull/112) [`99b72c3`](https://github.com/lukehsiao/git-stats/commit/99b72c3ce73a74da9275d4dfe7b4b0bdc5c9fce8) - **fix**: `--sort author` now lists authors A to Z, as its help text always said, and `--reverse` gives Z to A. It used to print Z to A by default. The help for `--sort` and `--reverse` now also says that they order only the stats table; the reviewers table always sorts by commits.
+
+- [#112](https://github.com/lukehsiao/git-stats/pull/112) [`a6fc8a5`](https://github.com/lukehsiao/git-stats/commit/a6fc8a5df921690374a37f025ff244ed1e9fd36b) - **refactor**: Rows that tie in the sorted column, in both the stats and the reviewers tables, now sort by name, A to Z. They used to keep the order in which the history walk first saw each author, so the same commits could print in a different order under git and jj.
+
+<pre>
+$ git-stats v0.2.8..v0.3.0
+Author           Commits  Changed Files  Insertions  Deletions  Net Δ
+Luke Hsiao             8             39       +1611       -692   +919
+dependabot[bot]        6              9         +18        -18      0
+Total                 14             48       +1629       -710   +919
+</pre>
+
 ## 0.2.8
 
 ### Patch Changes
