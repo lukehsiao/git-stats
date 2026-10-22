@@ -24,10 +24,11 @@ pub struct Cli {
     /// Show who reviewed/tested commits based on `Acked-by`, `Tested-by`, and
     /// `Reviewed-by` git trailers.
     reviews: bool,
-    /// What column to sort by
+    /// What column to sort the stats table by. The reviewers table always
+    /// sorts by commits.
     #[arg(short, long, value_enum, default_value_t = SortBy::Commits)]
     sort: SortBy,
-    /// Whether to reverse the sorting from descending to ascending
+    /// Reverse the sort order of the stats table: counts ascending, authors Z to A
     #[arg(long)]
     reverse: bool,
     /// Limit the commits output to ones with author header lines that match the specified pattern (regular expression).

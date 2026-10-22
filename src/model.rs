@@ -41,7 +41,7 @@ pub struct DiffStat {
 /// Which column the stats table is sorted by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum SortBy {
-    /// Sort by author alphabetic order
+    /// Sort by author name, A to Z
     Author,
     /// Sort by number of commits
     Commits,
