@@ -9,8 +9,9 @@ use git_stats::{app, cli::Cli, repo::Repo};
 fn main() -> Result<()> {
     enable_color_when_appropriate();
 
-    let opts = Cli::parse().into_options();
-    let repo = Repo::open(".")?;
+    let cli = Cli::parse();
+    let repo = Repo::open(".", cli.vcs())?;
+    let opts = cli.into_options();
     if repo.is_shallow() {
         eprintln!(
             "warning: this is a shallow clone; commits beyond the shallow boundary are not counted"

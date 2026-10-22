@@ -25,7 +25,7 @@ pub fn run(repo: &Repo, opts: &Options) -> Result<String> {
     let until = repo::parse_date(opts.until.as_deref())?;
 
     // READ: walk the range once to get commit metadata.
-    let walked = repo.walk(&opts.range, opts.reviews)?;
+    let walked = repo.walk(opts.range.as_deref(), opts.reviews)?;
 
     let mut output = String::new();
 

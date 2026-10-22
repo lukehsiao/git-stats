@@ -28,7 +28,9 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
-          tool: nextest
+          # jj-cli has no install-action manifest, so it installs through the
+          # cargo-binstall fallback. Without it, the jj integration tests skip.
+          tool: nextest,jj-cli
       - name: Run tests
         run: cargo nextest run
 
@@ -74,6 +76,6 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
-          tool: cargo-tarpaulin
+          tool: cargo-tarpaulin,jj-cli
       - name: Generate code coverage
         run: cargo tarpaulin --verbose --workspace
