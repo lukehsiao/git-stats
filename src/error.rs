@@ -19,6 +19,32 @@ pub enum Error {
     #[error("could not open a git repository")]
     OpenRepository(#[source] Source),
 
+    /// jj was requested, but no directory at or above the path holds `.jj`.
+    #[error("no jj workspace found at or above {path:?}")]
+    NoJjWorkspace { path: std::path::PathBuf },
+
+    /// The `jj` binary could not be started, typically because it is not
+    /// installed.
+    #[error(
+        "could not run `jj`; is it installed and on PATH? (`--vcs git` reads the git repository instead)"
+    )]
+    SpawnJj(#[source] std::io::Error),
+
+    /// A `jj` command exited with an error. jj prints its own diagnostics to
+    /// stderr, so this carries only the command and its exit status.
+    #[error("`jj {command}` failed ({status})")]
+    Jj {
+        command: &'static str,
+        status: std::process::ExitStatus,
+    },
+
+    /// A `jj` command printed output that is not what was requested.
+    #[error("unexpected output from `jj {command}`: {output:?}")]
+    JjOutput {
+        command: &'static str,
+        output: String,
+    },
+
     /// A revision (typically an endpoint of the range) could not be resolved.
     #[error("could not resolve revision {revision:?}")]
     ResolveRevision {

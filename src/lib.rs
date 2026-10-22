@@ -1,4 +1,5 @@
-//! `git-stats` aggregates per-author commit statistics from a git repository.
+//! `git-stats` aggregates per-author commit statistics from a git repository
+//! or jj workspace.
 //!
 //! The crate follows an A-Frame architecture: pure [`logic`] and gix-backed
 //! [`repo`] infrastructure are peers, coordinated by the thin [`app`] layer.

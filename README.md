@@ -84,7 +84,7 @@ A tool for getting aggregated commit stats
 Usage: git-stats [OPTIONS] [revision-range]
 
 Arguments:
-  [revision-range]  Show only commits in the specified revision range [default: HEAD]
+  [revision-range]  Show only commits in the specified revision range [default: HEAD, or ::@ with jj]
 
 Options:
   -e, --email            Show the email address of each author
@@ -94,9 +94,28 @@ Options:
   -a, --author <AUTHOR>  Limit the commits output to ones with author header lines that match the specified pattern (regular expression)
       --since <SINCE>    Limit the commits output to ones more recent than a specific date
       --until <UNTIL>    Limit the commits output to ones older than a specific date
+      --vcs <VCS>        Which version control system reads the repository and interprets [revision-range] [default: auto] [possible values: auto, git, jj]
   -h, --help             Print help (see more with '--help')
   -V, --version          Print version
 ```
+
+## Jujutsu
+
+In a [jj](https://docs.jj-vcs.dev/latest/) workspace, colocated or not, `git stats` takes a revset instead of a git revision range.
+Change IDs, bookmarks, and your `revset-aliases` all work:
+
+```
+$ git stats 'trunk()..@'
+```
+
+- **Default range.** Without a range, it reports `::@`, the working-copy commit and its ancestors.
+  Like any jj command, it snapshots the working copy first, so uncommitted edits count.
+  An empty working-copy commit counts as one commit with no changes; use `::@-` to leave it out.
+- **Requirements.** jj 0.36 or newer must be on your `PATH`. jj selects the commits, and gitoxide reads them from jj's git store.
+- **Conflicts.** A conflicted commit, and a commit with a conflicted parent, take their counts from jj's own diff, as `jj diff --stat` shows them.
+  jj stores a conflict as a git tree of `.jjconflict-*` directories, which a git diff would count as files.
+- **Forcing git.** `--vcs git` reads a colocated workspace as a git repository with git revision ranges, for scripts that pass ranges like `origin..HEAD`.
+  `git stats` also uses git when `GIT_DIR` is set, as it is inside git hooks.
 
 
 ## Notes

@@ -1,18 +1,22 @@
 use clap::Parser;
 
-use crate::model::{Options, SortBy};
+use crate::model::{Options, SortBy, Vcs};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
-    #[arg(name = "revision-range", default_value = "HEAD")]
-    /// Show only commits in the specified revision range.
+    #[arg(name = "revision-range")]
+    /// Show only commits in the specified revision range [default: HEAD, or ::@ with jj]
     ///
     /// When no <revision-range> is specified, it defaults to HEAD (i.e. the whole history leading
     /// to the current commit). origin..HEAD specifies all the commits reachable from the current
     /// commit (i.e. HEAD), but not from origin. For a complete list of ways to spell
     /// [revision-range], see the "Specifying Ranges" section of gitrevisions(7).
-    rev_range: String,
+    ///
+    /// In a jj workspace, [revision-range] is a revset instead, such as `trunk()..@` or a change
+    /// ID. It defaults to ::@ (the working-copy commit and its ancestors). See `jj help -k
+    /// revsets`.
+    rev_range: Option<String>,
     #[arg(short, long)]
     /// Show the email address of each author.
     email: bool,
@@ -37,9 +41,21 @@ pub struct Cli {
     /// Limit the commits output to ones older than a specific date.
     #[arg(long)]
     until: Option<String>,
+    /// Which version control system reads the repository and interprets [revision-range].
+    ///
+    /// `auto` picks jj when the nearest repository is a jj workspace, colocated or not, and git
+    /// otherwise. It also picks git when `GIT_DIR` is set, as it is inside git hooks.
+    #[arg(long, value_enum, default_value_t = Vcs::Auto)]
+    vcs: Vcs,
 }
 
 impl Cli {
+    /// The version control system selected by `--vcs`.
+    #[must_use]
+    pub fn vcs(&self) -> Vcs {
+        self.vcs
+    }
+
     /// Lower the parsed CLI into the application's [`Options`].
     #[must_use]
     pub fn into_options(self) -> Options {
@@ -88,7 +104,7 @@ mod test {
         .unwrap();
 
         let expected = Options {
-            range: "origin..HEAD".to_string(),
+            range: Some("origin..HEAD".to_string()),
             email: true,
             reviews: true,
             sort: SortBy::Net,
@@ -105,7 +121,7 @@ mod test {
         let opts = Cli::try_parse_from(["git-stats"]).unwrap().into_options();
 
         let expected = Options {
-            range: "HEAD".to_string(),
+            range: None,
             email: false,
             reviews: false,
             sort: SortBy::Commits,

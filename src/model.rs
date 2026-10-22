@@ -55,11 +55,25 @@ pub enum SortBy {
     Net,
 }
 
+/// Which version control system reads the repository and interprets the
+/// revision range.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum Vcs {
+    /// Use jj in a jj workspace (colocated or not), git otherwise
+    Auto,
+    /// Read the git repository and take a git revision range
+    Git,
+    /// Read the jj workspace and take a jj revset
+    Jj,
+}
+
 /// Parsed, validated options handed from the CLI down to the application layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
-    /// Revision range, interpreted by the infrastructure (e.g. `origin..HEAD`).
-    pub range: String,
+    /// Revision range, interpreted by the infrastructure: git revision syntax
+    /// (e.g. `origin..HEAD`) or, in a jj workspace, a revset. `None` selects
+    /// the backend's default.
+    pub range: Option<String>,
     /// Group and display authors as `Name <email>` rather than just `Name`.
     pub email: bool,
     /// Also produce the reviewer/tester table from git trailers.

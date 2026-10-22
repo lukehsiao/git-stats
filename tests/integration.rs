@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use git_stats::app;
-use git_stats::model::{Options, SortBy};
+use git_stats::model::{Options, SortBy, Vcs};
 use git_stats::repo::Repo;
 
 fn git(dir: &Path, args: &[&str]) {
@@ -38,7 +38,7 @@ fn git_out(dir: &Path, args: &[&str]) -> String {
 
 fn options(range: &str, reviews: bool) -> Options {
     Options {
-        range: range.to_string(),
+        range: Some(range.to_string()),
         email: false,
         reviews,
         sort: SortBy::Commits,
@@ -97,7 +97,7 @@ fn reads_a_real_repository() {
     git(p, &["add", "."]);
     git(p, &["commit", "-q", "-m", "second"]);
 
-    let repo = Repo::open(p).unwrap();
+    let repo = Repo::open(p, Vcs::Git).unwrap();
     // Control for the shallow-clone probe: a full repository must not warn.
     assert!(!repo.is_shallow(), "full repository detected as shallow");
     let out = report(&repo, &options("HEAD", true));
@@ -136,7 +136,7 @@ fn range_excludes_commits_on_the_excluded_side() {
     git(p, &["add", "."]);
     git(p, &["commit", "-q", "-m", "feature 2"]);
 
-    let repo = Repo::open(p).unwrap();
+    let repo = Repo::open(p, Vcs::Git).unwrap();
     let out = report(&repo, &options("main..feature", false));
 
     // `main..feature` excludes the base commit, leaving exactly the 2 feature commits.
@@ -178,7 +178,7 @@ fn symmetric_difference_range_excludes_the_common_ancestor() {
     git(p, &["add", "."]);
     git(p, &["commit", "-q", "-m", "main only"]);
 
-    let repo = Repo::open(p).unwrap();
+    let repo = Repo::open(p, Vcs::Git).unwrap();
     let out = report(&repo, &options("main...feature", false));
 
     // The symmetric difference drops the shared base, leaving the 2 divergent commits.
@@ -227,7 +227,7 @@ fn symmetric_difference_hides_every_merge_base() {
     git(p, &["checkout", "-q", "br-b"]);
     git(p, &["merge", "-q", "--no-ff", "--no-edit", "a-tip"]);
 
-    let repo = Repo::open(p).unwrap();
+    let repo = Repo::open(p, Vcs::Git).unwrap();
     let out = report(&repo, &options("br-a...br-b", false));
 
     // git rev-list --count br-a...br-b is 2: only the two cross merges.
@@ -257,7 +257,7 @@ fn tag_fixture() -> (tempfile::TempDir, Repo) {
     git(p, &["tag", "-a", "-m", "release", "annotated", "HEAD~1"]);
     git(p, &["tag", "lightweight", "HEAD~1"]);
 
-    let repo = Repo::open(p).unwrap();
+    let repo = Repo::open(p, Vcs::Git).unwrap();
     (dir, repo)
 }
 
@@ -378,7 +378,7 @@ fn symmetric_difference_with_an_annotated_tag_resolves() {
     git(p, &["add", "."]);
     git(p, &["commit", "-q", "-m", "main only"]);
 
-    let repo = Repo::open(p).unwrap();
+    let repo = Repo::open(p, Vcs::Git).unwrap();
     // Unlike the two-dot tests, `...` also feeds the endpoints to the
     // merge-base computation, which needs commit OIDs rather than tag OIDs.
     let out = report(&repo, &options("main...feature-tag", false));
@@ -406,7 +406,7 @@ fn filter_validation_precedes_the_walk() {
     git(p, &["add", "."]);
     git(p, &["commit", "-q", "-m", "base"]);
 
-    let repo = Repo::open(p).unwrap();
+    let repo = Repo::open(p, Vcs::Git).unwrap();
     let mut opts = options("no-such-ref..HEAD", false);
     opts.since = Some("not-a-date".to_string());
 
@@ -441,7 +441,7 @@ fn binary_file_changes_count_as_changed_files() {
     git(p, &["add", "."]);
     git(p, &["commit", "-q", "-m", "add text and binary"]);
 
-    let repo = Repo::open(p).unwrap();
+    let repo = Repo::open(p, Vcs::Git).unwrap();
     let out = report(&repo, &options("HEAD", false));
 
     let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
@@ -605,7 +605,7 @@ fn mailmap_folds_identities_like_git_shortlog() {
     git(p, &["add", "."]);
     git(p, &["commit", "-q", "-m", "untouched author"]);
 
-    let repo = Repo::open(p).unwrap();
+    let repo = Repo::open(p, Vcs::Git).unwrap();
     let mut opts = options("HEAD", false);
     opts.email = true;
     let out = report(&repo, &opts);
@@ -666,7 +666,7 @@ fn submodule_changes_count_like_git_numstat() {
     git(&outer, &["update-index", "--add", "--cacheinfo", &link]);
     git(&outer, &["commit", "-q", "-m", "bump sub"]);
 
-    let repo = Repo::open(&outer).unwrap();
+    let repo = Repo::open(&outer, Vcs::Git).unwrap();
     let out = report(&repo, &options("HEAD", false));
 
     // git log --numstat: base is `1 0 r.txt`, adding the gitlink is `1 0 sub`
@@ -722,7 +722,7 @@ fn gitlink_renames_count_as_one_unchanged_file() {
     git(&outer, &["update-index", "--add", "--cacheinfo", &link]);
     git(&outer, &["commit", "-q", "-m", "rename sub"]);
 
-    let repo = Repo::open(&outer).unwrap();
+    let repo = Repo::open(&outer, Vcs::Git).unwrap();
     let out = report(&repo, &options("HEAD", false));
 
     // base is 1 file +1, adding the gitlink is 1 file +1, and the rename is
@@ -763,7 +763,7 @@ fn shallow_clones_treat_boundary_commits_as_parentless() {
     let url = format!("file://{}", origin.display());
     git(p, &["clone", "-q", "--depth", "2", &url, "shallow"]);
 
-    let repo = Repo::open(p.join("shallow")).unwrap();
+    let repo = Repo::open(p.join("shallow"), Vcs::Git).unwrap();
     // The binary warns on shallow clones via this probe; the full-clone
     // control lives in `reads_a_real_repository`.
     assert!(repo.is_shallow(), "depth-2 clone should detect as shallow");
@@ -819,7 +819,7 @@ fn shallow_boundary_merges_diff_like_root_commits() {
     let url = format!("file://{}", origin.display());
     git(p, &["clone", "-q", "--depth", "2", &url, "shallow"]);
 
-    let repo = Repo::open(p.join("shallow")).unwrap();
+    let repo = Repo::open(p.join("shallow"), Vcs::Git).unwrap();
     let out = report(&repo, &options("HEAD", false));
 
     let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
@@ -878,7 +878,7 @@ fn decode_failures_name_the_offending_commit() {
     git(p, &["update-ref", "refs/heads/main", &bad]);
     git(p, &["commit-graph", "write", "--reachable"]);
 
-    let repo = Repo::open(p).unwrap();
+    let repo = Repo::open(p, Vcs::Git).unwrap();
     let err = app::run(&repo, &options("HEAD", false)).unwrap_err();
     assert!(
         err.to_string().contains(&bad),
@@ -915,7 +915,7 @@ fn merge_commits_are_counted_but_add_no_lines() {
     git(p, &["commit", "-q", "-m", "main"]);
     git(p, &["merge", "--no-ff", "--no-edit", "feature"]);
 
-    let repo = Repo::open(p).unwrap();
+    let repo = Repo::open(p, Vcs::Git).unwrap();
     let out = report(&repo, &options("HEAD", false));
 
     // Four commits (base, feature, main, merge); the merge contributes no lines,

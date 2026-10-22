@@ -95,7 +95,8 @@ _append-git-stats:
 	    exit 0
 	fi
 
-	stats=$(git-stats "${prev_tag}..HEAD")
+	# The range uses git syntax, so force git even inside a jj workspace.
+	stats=$(git-stats --vcs git "${prev_tag}..HEAD")
 
 	# Find the new version header line number
 	version_line=$(grep -n "^## ${version}$" CHANGELOG.md | head -1 | cut -d: -f1)

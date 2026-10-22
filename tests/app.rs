@@ -31,7 +31,7 @@ fn diff(insertions: u64, deletions: u64, files: u64) -> DiffStat {
 
 fn options() -> Options {
     Options {
-        range: "HEAD".to_string(),
+        range: None,
         email: false,
         reviews: false,
         sort: SortBy::Commits,
