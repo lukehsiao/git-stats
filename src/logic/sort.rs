@@ -1,14 +1,14 @@
 use crate::model::{SortBy, Stat};
 
-/// Sort per-author rows by the chosen column, descending by default. With
-/// `reverse`, the column order is flipped to ascending. Ties sort by author
-/// name, A to Z in both directions, so the order does not depend on which
-/// commit the walk saw first. Authors are unique, as `aggregate` makes them,
-/// so no two rows compare equal.
+/// Sort per-author rows by the chosen column: counts descending, names A to Z.
+/// With `reverse`, the column order is flipped. Ties sort by author name, A
+/// to Z in both directions, so the order does not depend on which commit the
+/// walk saw first. Authors are unique, as `aggregate` makes them, so no two
+/// rows compare equal.
 pub fn sort_stats(stats: &mut [Stat], sort: SortBy, reverse: bool) {
     stats.sort_by(|a, b| {
         let column = match sort {
-            SortBy::Author => b.author.cmp(&a.author),
+            SortBy::Author => a.author.cmp(&b.author),
             SortBy::Commits => b.commits.cmp(&a.commits),
             SortBy::Files => b.num_files.cmp(&a.num_files),
             SortBy::Insertions => b.insertions.cmp(&a.insertions),
@@ -111,15 +111,16 @@ mod tests {
         }
     }
 
-    /// The chosen column is non-increasing by default and non-decreasing
-    /// with `reverse`.
+    /// By default, counts are non-increasing and names non-decreasing (A to
+    /// Z). `reverse` flips both.
     #[hegel::test]
     fn column_order_follows_the_direction(tc: hegel::TestCase) {
         let mut stats = tc.draw(stat_list().print_as_debug());
         let by = tc.draw(any_sort_by().print_as_debug());
         let reverse = tc.draw(generators::booleans());
         sort_stats(&mut stats, by, reverse);
-        let out_of_order = if reverse {
+        let ascending = (by == SortBy::Author) != reverse;
+        let out_of_order = if ascending {
             std::cmp::Ordering::Greater
         } else {
             std::cmp::Ordering::Less
