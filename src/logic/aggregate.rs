@@ -116,16 +116,23 @@ pub fn aggregate_reviews<'a>(
     reviews
 }
 
-/// The reviewer key from a trailer value: the full `Name <email>` when `email`,
-/// otherwise just the name preceding ` <`.
+/// The reviewer key from a trailer value such as `Ada Lovelace <ada@x>`,
+/// formed like an author key: `Name <email>` with `email`, otherwise `Name`.
+/// Whitespace around the name and the email does not matter. A trailer with
+/// only `<email>` uses the email as the key, so it does not show as a blank
+/// name.
 fn reviewer_key(value: &str, email: bool) -> String {
     let value = value.trim();
-    if email {
-        return value.to_string();
-    }
-    match value.split_once(" <") {
-        Some((name, _)) => name.trim().to_string(),
-        None => value.to_string(),
+    let (name, address) = match value.strip_suffix('>').and_then(|v| v.split_once('<')) {
+        Some((name, address)) => (name.trim(), address.trim()),
+        None => (value, ""),
+    };
+    if name.is_empty() {
+        address.to_string()
+    } else if email && !address.is_empty() {
+        format!("{name} <{address}>")
+    } else {
+        name.to_string()
     }
 }
 
@@ -298,6 +305,40 @@ mod tests {
             assert_eq!(reviewer_key(&name, false), name);
             assert_eq!(reviewer_key(&name, true), name);
         }
+    }
+
+    /// Whitespace around the name, around the email inside `<>`, and around
+    /// the whole value gives the same key as the plain `Name <email>`, so
+    /// the same reviewer is one row in both modes.
+    #[hegel::test]
+    fn reviewer_key_ignores_surrounding_whitespace(tc: hegel::TestCase) {
+        let name = tc.draw(generators::from_regex(r"[A-Za-z]+( [A-Za-z]+){0,3}").fullmatch(true));
+        let email = tc.draw(generators::from_regex(r"[a-z]+@[a-z]+\.[a-z]+").fullmatch(true));
+        let pad = || tc.draw(generators::from_regex(r"[ \t]{0,3}").fullmatch(true));
+        let padded = format!(
+            "{}{name}{}<{}{email}{}>{}",
+            pad(),
+            pad(),
+            pad(),
+            pad(),
+            pad()
+        );
+        let plain = format!("{name} <{email}>");
+        for with_email in [false, true] {
+            assert_eq!(
+                reviewer_key(&padded, with_email),
+                reviewer_key(&plain, with_email),
+                "padded: {padded:?}"
+            );
+        }
+    }
+
+    /// A trailer with only `<email>` is keyed by the email in both modes.
+    #[hegel::test]
+    fn reviewer_key_falls_back_to_the_email(tc: hegel::TestCase) {
+        let email = tc.draw(generators::from_regex(r"[a-z]+@[a-z]+\.[a-z]+").fullmatch(true));
+        let with_email = tc.draw(generators::booleans());
+        assert_eq!(reviewer_key(&format!("<{email}>"), with_email), email);
     }
 
     /// Aggregation must stay panic-free even when counts approach `u64::MAX`.
