@@ -468,6 +468,26 @@ fn a_missing_file_fails_naming_the_commit_and_path() {
     );
 }
 
+/// A commit whose tree the repository lacks fails the read, naming that commit rather than only
+/// the missing object.
+#[test]
+fn a_missing_tree_fails_naming_the_commit() {
+    let mut b = RepoBuilder::new();
+    let base = b.commit(ada().file("a.txt", "a\n"));
+    let broken = b.commit(ada().parent(base).file("a.txt", "b\n"));
+    // A later `HEAD` keeps a tree, because the diff setup reads `.gitattributes` from it.
+    b.commit(ada().parent(broken).file("a.txt", "c\n"));
+    b.remove_tree(broken);
+    let (_dir, repo) = b.open();
+
+    let broken = broken.to_string();
+    let err = repo.read(Some(&broken), |_| true, false).unwrap_err();
+    assert!(
+        matches!(&err, git_stats::Error::ReadCommit { id, .. } if *id == broken),
+        "{err:?}"
+    );
+}
+
 /// In a partial clone, a failed read points at the missing objects, whether a file's own diff or
 /// gix's rename detection reads the missing file first. git marks a partial clone with a promisor
 /// remote, or with `extensions.partialClone` in older versions.

@@ -325,6 +325,15 @@ impl RepoBuilder {
         }
     }
 
+    /// Delete the tree object of `commit`, as a corrupt repository might lack it. gix writes each
+    /// object to its own loose file, named after its ID.
+    pub fn remove_tree(&mut self, commit: ObjectId) {
+        let tree = self.repo.find_commit(commit).unwrap().tree_id().unwrap();
+        let hex = tree.to_string();
+        let objects = self.repo.git_dir().join("objects");
+        std::fs::remove_file(objects.join(&hex[..2]).join(&hex[2..])).unwrap();
+    }
+
     /// Write `.mailmap` into the worktree without committing it, so it adds no changed file.
     pub fn mailmap(&mut self, contents: &str) {
         std::fs::write(self.dir.path().join(".mailmap"), contents).unwrap();

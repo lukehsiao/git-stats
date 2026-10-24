@@ -98,7 +98,7 @@ fn parse_log_line(line: &str) -> Option<(gix::ObjectId, Option<DiffStat>)> {
 /// git store may be empty, or may belong to another workspace, so attributes come only from the
 /// files in this workspace, which [`open`] made the worktree.
 pub(super) fn diff_cache(repo: &gix::Repository) -> Result<gix::diff::blob::Platform> {
-    let err = |e: gix::Error| Error::DiffStats(Box::new(e));
+    let err = |e: gix::Error| Error::DiffSetup(Box::new(e));
     let index = gix::index::State::new(repo.object_hash());
     let attributes = repo
         .attributes_only(

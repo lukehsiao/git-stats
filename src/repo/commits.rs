@@ -1,7 +1,7 @@
 //! Commit reading: what the walk learns about each selected commit, from either adapter.
 
 use super::{Numstat, Selected, WalkedCommit};
-use crate::error::{Error, Result};
+use crate::error::{Error, Result, Source};
 use crate::model::{CommitMeta, Contributor, DiffStat};
 
 /// Read each commit in `commits`, in order. Each comes with its numstat when that is already known.
@@ -17,63 +17,62 @@ pub(super) fn read<'r>(
     let shallow = repo.shallow_commits().ok().flatten();
     commits.map(move |item| {
         let (id, known) = item?;
-        let commit = repo
-            .find_commit(id)
-            .map_err(|e| Error::ReadCommit(Box::new(e)))?;
-        // Decode the header once; the author, committer, parents, and message accessors on
-        // `gix::Commit` would each rescan the raw bytes.
-        let commit = commit.decode().map_err(|e| Error::DecodeCommit {
-            id: id.to_string(),
-            source: e.into(),
-        })?;
-        let is_boundary = shallow
-            .as_ref()
-            .is_some_and(|s| s.binary_search(&id).is_ok());
-        // A merge adds nothing, as `git log --numstat` reports it. At the shallow boundary, git
-        // grafts a merge as parentless, and jj gives it its virtual root commit as its only parent.
-        // So neither sees a merge there, and it diffs its whole tree like any other boundary
-        // commit. A numstat from jj wins over that rule: jj diffs against the root, which is the
-        // same whole-tree diff, and only jj sees past a conflict's `.jjconflict-*` trees.
-        let is_merge = commit.parents.len() > 1;
-        let numstat = if is_merge && !is_boundary {
-            Numstat::Known(DiffStat::default())
-        } else if let Some(diff) = known {
-            Numstat::Known(diff)
-        } else {
-            let base = if is_boundary {
-                None
-            } else {
-                commit.parents().next()
-            };
-            Numstat::Diff { id, base }
-        };
-        Ok(WalkedCommit {
-            meta: commit_meta(&commit, &mailmap)?,
-            reviewers: if need_reviewers {
-                parse_reviewers(&commit, &mailmap)
-            } else {
-                Vec::new()
-            },
-            numstat,
+        read_commit(repo, &mailmap, shallow.as_ref(), id, known, need_reviewers).map_err(|source| {
+            Error::ReadCommit {
+                id: id.to_string(),
+                source,
+            }
         })
     })
 }
 
-fn commit_meta(
-    commit: &gix::objs::CommitRef<'_>,
+/// Read commit `id`, deciding its numstat from `known`, the one its adapter gave, if any.
+fn read_commit(
+    repo: &gix::Repository,
     mailmap: &gix::mailmap::Snapshot,
-) -> Result<CommitMeta> {
-    let author = mailmap.resolve(commit.author().map_err(|e| Error::ReadCommit(e.into()))?);
-    let time_seconds = commit
-        .committer()
-        .map_err(|e| Error::ReadCommit(e.into()))?
-        .seconds();
-    Ok(CommitMeta {
-        author: Contributor {
-            name: author.name.to_string(),
-            email: author.email.to_string(),
+    shallow: Option<&gix::shallow::Commits>,
+    id: gix::ObjectId,
+    known: Option<DiffStat>,
+    need_reviewers: bool,
+) -> std::result::Result<WalkedCommit, Source> {
+    // Decode the header once; the author, committer, parents, and message accessors on
+    // `gix::Commit` would each rescan the raw bytes.
+    let commit = repo.find_commit(id)?;
+    let commit = commit.decode()?;
+    let is_boundary = shallow.is_some_and(|s| s.binary_search(&id).is_ok());
+    // A merge adds nothing, as `git log --numstat` reports it. At the shallow boundary, git grafts
+    // a merge as parentless, and jj gives it its virtual root commit as its only parent. So neither
+    // sees a merge there, and it diffs its whole tree like any other boundary commit. A numstat
+    // from jj wins over that rule: jj diffs against the root, which is the same whole-tree diff,
+    // and only jj sees past a conflict's `.jjconflict-*` trees.
+    let is_merge = commit.parents.len() > 1;
+    let numstat = if is_merge && !is_boundary {
+        Numstat::Known(DiffStat::default())
+    } else if let Some(diff) = known {
+        Numstat::Known(diff)
+    } else {
+        let base = if is_boundary {
+            None
+        } else {
+            commit.parents().next()
+        };
+        Numstat::Diff { id, base }
+    };
+    let author = mailmap.resolve(commit.author()?);
+    Ok(WalkedCommit {
+        meta: CommitMeta {
+            author: Contributor {
+                name: author.name.to_string(),
+                email: author.email.to_string(),
+            },
+            time_seconds: commit.committer()?.seconds(),
         },
-        time_seconds,
+        reviewers: if need_reviewers {
+            parse_reviewers(&commit, mailmap)
+        } else {
+            Vec::new()
+        },
+        numstat,
     })
 }
 

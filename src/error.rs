@@ -7,7 +7,7 @@ use thiserror::Error;
 /// Boxed source error. gix surfaces a distinct concrete error type per operation, so boxing
 /// preserves the source chain without this enum having to enumerate (and track, across gix
 /// versions) every one of them.
-type Source = Box<dyn std::error::Error + Send + Sync + 'static>;
+pub(crate) type Source = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 /// Result alias for the library's [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
@@ -60,22 +60,18 @@ pub enum Error {
         source: Source,
     },
 
-    /// A commit object could not be read or decoded.
-    #[error("could not read commit data")]
-    ReadCommit(#[source] Source),
-
-    /// A specific commit object could not be decoded, typically because its header is corrupt in a
-    /// way git itself would never write.
-    #[error("could not decode commit {id}")]
-    DecodeCommit {
+    /// A commit in the range could not be read, decoded, or diffed, for example because an object
+    /// it needs is missing or corrupt.
+    #[error("could not read commit {id}")]
+    ReadCommit {
         id: String,
         #[source]
         source: Source,
     },
 
-    /// Computing a commit's diff stats failed.
-    #[error("could not compute diff stats")]
-    DiffStats(#[source] Source),
+    /// The diff setup could not read the index or the `.gitattributes` it needs.
+    #[error("could not read the attributes for diffs")]
+    DiffSetup(#[source] Source),
 
     /// A file's contents in a commit could not be read to count its lines.
     #[error("could not read {path:?} in commit {commit}")]

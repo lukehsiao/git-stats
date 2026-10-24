@@ -26,10 +26,14 @@ pub(super) fn select<'r>(repo: &'r gix::Repository, range: Option<&str>) -> Resu
             source: Box::new(e),
         })?;
     // Stream the IDs so each commit is read right after the traversal decoded it, while it is still
-    // in the object cache.
-    Ok(Box::new(walk.map(|info| {
+    // in the object cache. A failure here comes before the commit's ID is known.
+    let range = range.to_string();
+    Ok(Box::new(walk.map(move |info| {
         info.map(|info| (info.id, None))
-            .map_err(|e| Error::ReadCommit(Box::new(e)))
+            .map_err(|e| Error::WalkRange {
+                range: range.clone(),
+                source: Box::new(e),
+            })
     })))
 }
 
@@ -37,7 +41,7 @@ pub(super) fn select<'r>(repo: &'r gix::Repository, range: Option<&str>) -> Resu
 /// reads them.
 pub(super) fn diff_cache(repo: &gix::Repository) -> Result<gix::diff::blob::Platform> {
     repo.diff_resource_cache_for_tree_diff()
-        .map_err(|e| Error::DiffStats(Box::new(e)))
+        .map_err(|e| Error::DiffSetup(Box::new(e)))
 }
 
 /// Tips to walk from, and commits to hide, for a revision range.

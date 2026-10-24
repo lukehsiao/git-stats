@@ -9,7 +9,7 @@ use gix::object::tree::EntryKind;
 use gix::object::tree::diff::Change;
 
 use super::{Numstat, OBJECT_CACHE_BYTES, Revisions};
-use crate::error::{Error, Result};
+use crate::error::{Error, Result, Source};
 use crate::model::DiffStat;
 
 /// Per-rayon-worker state: a thread-local repository and two diff resource caches built once and
@@ -61,52 +61,37 @@ fn diff_numstat(
     id: gix::ObjectId,
     base: Option<gix::ObjectId>,
 ) -> Result<DiffStat> {
-    let tree_of = |id: gix::ObjectId| {
-        repo.find_commit(id)
-            .map_err(|e| Error::ReadCommit(Box::new(e)))?
-            .tree()
-            .map_err(|e| Error::ReadCommit(Box::new(e)))
-    };
-    let new_tree = tree_of(id)?;
-    let old_tree = match base {
-        Some(base) => tree_of(base)?,
-        None => repo.empty_tree(),
-    };
-
-    // Equivalent to `gix::Tree::stats`, but driving caller-owned caches so the index and attribute
-    // stack are read once per worker rather than per commit.
     let (mut files, mut insertions, mut deletions) = (0u64, 0u64, 0u64);
     let mut failure = None;
-    let walked = old_tree
-        .changes()
-        .map_err(|e| Error::DiffStats(Box::new(e)))?
-        .for_each_to_obtain_tree_with_cache(&new_tree, walk_cache, |change| {
-            let lines = change_lines(repo, count_cache, id, &change);
-            // The cache keys its contents by object ID alone, so clear it between changes. Else a
-            // file would reuse the binary decision of an earlier file with the same contents at a
-            // path with other attributes. Clearing also bounds memory.
-            count_cache.clear_resource_cache_keep_allocation();
-            match lines {
-                Ok(Some((ins, del))) => {
-                    files += 1;
-                    insertions += ins;
-                    deletions += del;
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    failure = Some(e);
-                    return Ok(ControlFlow::Break(()));
-                }
+    let walked = for_each_change(repo, walk_cache, id, base, |change| {
+        let lines = change_lines(repo, count_cache, id, &change);
+        // The cache keys its contents by object ID alone, so clear it between changes. Else a file
+        // would reuse the binary decision of an earlier file with the same contents at a path with
+        // other attributes. Clearing also bounds memory.
+        count_cache.clear_resource_cache_keep_allocation();
+        match lines {
+            Ok(Some((ins, del))) => {
+                files += 1;
+                insertions += ins;
+                deletions += del;
+                ControlFlow::Continue(())
             }
-            Ok(ControlFlow::Continue(()))
-        });
+            Ok(None) => ControlFlow::Continue(()),
+            Err(e) => {
+                failure = Some(e);
+                ControlFlow::Break(())
+            }
+        }
+    });
     walk_cache.clear_resource_cache_keep_allocation();
     // Stopping the walk early can make gix report a cancellation, so the cause comes first.
     if let Some(e) = failure {
         return Err(e);
     }
-    walked.map_err(|e| Error::DiffStats(Box::new(e)))?;
-
+    walked.map_err(|source| Error::ReadCommit {
+        id: id.to_string(),
+        source,
+    })?;
     Ok(DiffStat {
         insertions,
         deletions,
@@ -135,6 +120,34 @@ fn in_partial_clone(repo: &gix::Repository, e: Error) -> Error {
     } else {
         e
     }
+}
+
+/// Call `visit` with each change from the tree of commit `base`, or the empty tree without a
+/// `base`, to the tree of commit `id`. Equivalent to `gix::Tree::stats`, but driving a
+/// caller-owned cache so the index and attribute stack are read once per worker rather than per
+/// commit.
+fn for_each_change(
+    repo: &gix::Repository,
+    walk_cache: &mut gix::diff::blob::Platform,
+    id: gix::ObjectId,
+    base: Option<gix::ObjectId>,
+    mut visit: impl FnMut(Change<'_, '_, '_>) -> ControlFlow<()>,
+) -> std::result::Result<(), Source> {
+    fn tree_of(
+        repo: &gix::Repository,
+        id: gix::ObjectId,
+    ) -> std::result::Result<gix::Tree<'_>, Source> {
+        Ok(repo.find_commit(id)?.tree()?)
+    }
+    let new_tree = tree_of(repo, id)?;
+    let old_tree = match base {
+        Some(base) => tree_of(repo, base)?,
+        None => repo.empty_tree(),
+    };
+    old_tree
+        .changes()?
+        .for_each_to_obtain_tree_with_cache(&new_tree, walk_cache, |change| Ok(visit(change)))?;
+    Ok(())
 }
 
 /// One side of a tree change: the entry's kind, object, and path, or `None` where no entry exists.
