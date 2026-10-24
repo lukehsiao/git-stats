@@ -12,42 +12,35 @@ use rayon::prelude::*;
 use crate::error::{Error, Result};
 use crate::model::{CommitMeta, Contributor, DiffStat, Vcs};
 
-/// A commit yielded by [`Repo::walk`]: its logic-facing metadata plus an opaque handle the wrapper
-/// uses to compute the numstat later.
+/// A commit yielded by [`Repo::walk`]: its logic-facing metadata plus how [`Repo::numstats`] gets
+/// its numstat.
 pub struct WalkedCommit {
     pub meta: CommitMeta,
-    is_merge: bool,
-    handle: Handle,
+    numstat: Numstat,
 }
 
-impl WalkedCommit {
-    /// Where the numstat comes from. A merge contributes nothing, matching `git log --numstat`, so
-    /// it needs no diff.
-    fn numstat_source(&self) -> Handle {
-        if self.is_merge {
-            Handle::Known(DiffStat::default())
-        } else {
-            self.handle
-        }
-    }
-}
-
-/// How to obtain a commit's numstat.
+/// How to obtain a commit's numstat, decided once when the walk reads the commit.
 #[derive(Clone, Copy)]
-enum Handle {
-    /// gix diffs the commit against its first parent.
-    Diff(gix::ObjectId),
-    /// The numstat is already known: canned in a nulled repository, or computed by jj where a
-    /// conflict makes the git trees meaningless.
+enum Numstat {
+    /// gix diffs the tree of commit `id` against the tree of commit `base`. Without a `base`, it
+    /// diffs against the empty tree: for a root commit, and for a commit at the shallow boundary,
+    /// whose parents are missing from the object database.
+    Diff {
+        id: gix::ObjectId,
+        base: Option<gix::ObjectId>,
+    },
+    /// The numstat is already known. A merge contributes nothing, matching `git log --numstat`. A
+    /// nulled repository has canned numstats, and jj computes them where a conflict makes the git
+    /// trees meaningless.
     Known(DiffStat),
 }
 
-/// A canned commit used to build a nulled [`Repo`] in tests.
+/// A canned commit used to build a nulled [`Repo`] in tests. Its `diff` is the numstat the walk
+/// reports, so a merge carries the default (all zero).
 #[derive(Debug, Clone)]
 pub struct NulledCommit {
     pub meta: CommitMeta,
     pub diff: DiffStat,
-    pub is_merge: bool,
 }
 
 enum Backend {
@@ -189,8 +182,7 @@ impl Repo {
                     }
                     WalkedCommit {
                         meta,
-                        is_merge: c.is_merge,
-                        handle: Handle::Known(c.diff),
+                        numstat: Numstat::Known(c.diff),
                     }
                 })
                 .collect()),
@@ -221,10 +213,10 @@ impl Repo {
             Backend::Null(_) => Ok(commits
                 .iter()
                 .map(|c| {
-                    let diff = match c.numstat_source() {
-                        Handle::Known(diff) => diff,
+                    let diff = match c.numstat {
+                        Numstat::Known(diff) => diff,
                         // A nulled repository yields only known numstats.
-                        Handle::Diff(_) => DiffStat::default(),
+                        Numstat::Diff { .. } => DiffStat::default(),
                     };
                     (&c.meta, diff)
                 })
@@ -287,9 +279,6 @@ fn jj(workspace: &Path, command: &'static str, args: &[&str]) -> Result<String> 
 struct Worker<'a> {
     repo: gix::Repository,
     revisions: &'a Revisions,
-    // Commits at the shallow boundary, whose parents exist in their headers but not in the object
-    // database. `None` when the clone is not shallow.
-    shallow: Option<gix::shallow::Commits>,
     // `for_each_to_obtain_tree_with_cache` holds one cache for the tree walk while each change's
     // line diff needs another, so a worker keeps two. They are built lazily because the cache
     // constructor is fallible and rayon's `map_init` initializer cannot return a `Result`.
@@ -301,35 +290,26 @@ impl<'a> Worker<'a> {
         // Per-thread object cache so repeated tree/blob reads during diffing hit memory instead of
         // the pack. 8 MiB comfortably holds a commit's trees.
         repo.object_cache_size_if_unset(8 * 1024 * 1024);
-        // An unreadable shallow file degrades to "not shallow"; a boundary commit then surfaces its
-        // missing parent as a read error below.
-        let shallow = repo.shallow_commits().ok().flatten();
         Self {
             repo,
             revisions,
-            shallow,
             caches: None,
         }
     }
 
     fn numstat(&mut self, commit: &WalkedCommit) -> Result<DiffStat> {
-        let id = match commit.numstat_source() {
-            Handle::Diff(id) => id,
-            Handle::Known(diff) => return Ok(diff),
+        let (id, base) = match commit.numstat {
+            Numstat::Diff { id, base } => (id, base),
+            Numstat::Known(diff) => return Ok(diff),
         };
         if self.caches.is_none() {
             let walk = diff_cache(&self.repo, self.revisions)?;
             let count = walk.clone();
             self.caches = Some((walk, count));
         }
-        let Self {
-            repo,
-            shallow,
-            caches,
-            ..
-        } = self;
+        let Self { repo, caches, .. } = self;
         let (walk_cache, count_cache) = caches.as_mut().expect("initialized above");
-        numstat_real(repo, walk_cache, count_cache, shallow.as_ref(), id)
+        numstat_real(repo, walk_cache, count_cache, id, base)
     }
 }
 
@@ -458,9 +438,10 @@ fn read_commits(
     need_reviewers: bool,
 ) -> Result<Vec<WalkedCommit>> {
     let mailmap = repo.open_mailmap();
-    // git grafts commits at the shallow boundary as parentless, so one whose header names several
-    // parents is not a merge there. An unreadable shallow file degrades to "not shallow", mirroring
-    // Worker::new.
+    // git grafts commits at the shallow boundary as parentless: one whose header names several
+    // parents is not a merge there, and it diffs against the empty tree. An unreadable shallow file
+    // degrades to "not shallow", so a boundary commit then surfaces its missing parent as a read
+    // error when its numstat is computed.
     let shallow = repo.shallow_commits().ok().flatten();
     commits
         .map(|item| {
@@ -477,11 +458,21 @@ fn read_commits(
             let is_boundary = shallow
                 .as_ref()
                 .is_some_and(|s| s.binary_search(&id).is_ok());
-            let is_merge = !is_boundary && commit.parents.len() > 1;
+            let numstat = if !is_boundary && commit.parents.len() > 1 {
+                Numstat::Known(DiffStat::default())
+            } else if let Some(diff) = known {
+                Numstat::Known(diff)
+            } else {
+                let base = if is_boundary {
+                    None
+                } else {
+                    commit.parents().next()
+                };
+                Numstat::Diff { id, base }
+            };
             Ok(WalkedCommit {
                 meta: commit_meta(&commit, &mailmap, need_reviewers)?,
-                is_merge,
-                handle: known.map_or(Handle::Diff(id), Handle::Known),
+                numstat,
             })
         })
         .collect()
@@ -569,32 +560,23 @@ fn split_ident(value: &str) -> Option<(&str, &str)> {
     Some((name.trim_end_matches(GIT_SPACE), email))
 }
 
+/// The numstat of commit `id` against commit `base`, or against the empty tree without a `base`.
 fn numstat_real(
     repo: &gix::Repository,
     walk_cache: &mut gix::diff::blob::Platform,
     count_cache: &mut gix::diff::blob::Platform,
-    shallow: Option<&gix::shallow::Commits>,
     id: gix::ObjectId,
+    base: Option<gix::ObjectId>,
 ) -> Result<DiffStat> {
-    let commit = repo
-        .find_commit(id)
-        .map_err(|e| Error::ReadCommit(Box::new(e)))?;
-    let new_tree = commit.tree().map_err(|e| Error::ReadCommit(Box::new(e)))?;
-    // A commit at the shallow boundary names parents that are not in the object database. git diffs
-    // it against the empty tree, exactly like a root commit, so do the same instead of failing on
-    // the missing parent.
-    let is_boundary = shallow.is_some_and(|s| s.binary_search(&id).is_ok());
-    let parent = if is_boundary {
-        None
-    } else {
-        commit.parent_ids().next()
-    };
-    let old_tree = match parent {
-        Some(parent) => repo
-            .find_commit(parent.detach())
+    let tree_of = |id: gix::ObjectId| {
+        repo.find_commit(id)
             .map_err(|e| Error::ReadCommit(Box::new(e)))?
             .tree()
-            .map_err(|e| Error::ReadCommit(Box::new(e)))?,
+            .map_err(|e| Error::ReadCommit(Box::new(e)))
+    };
+    let new_tree = tree_of(id)?;
+    let old_tree = match base {
+        Some(base) => tree_of(base)?,
         None => repo.empty_tree(),
     };
 
