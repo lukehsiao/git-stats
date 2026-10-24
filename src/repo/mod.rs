@@ -160,11 +160,15 @@ impl Repo {
     ) -> Result<Commits> {
         // The walk's repository and its object cache drop here, before each diff worker opens its
         // own.
-        let (kept, reviewers) = {
+        let (cache, kept, reviewers) = {
             let mut repo = self.repo.to_thread_local();
             // The metadata read then reuses the commits that the traversal already decoded.
             repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
             let selected = self.revisions.select(&repo, range)?;
+            // A bad index or `.gitattributes` should fail before the walk, which can take minutes,
+            // but after a bad range, which is the likelier mistake. Each diff worker clones the
+            // cache.
+            let cache = self.revisions.diff_cache(&repo)?;
             let mut reviewers = reviews.then(Vec::new);
             let mut kept = Vec::new();
             for commit in commits::read(&repo, selected, reviews) {
@@ -176,12 +180,12 @@ impl Repo {
                     kept.push((commit.meta, commit.numstat));
                 }
             }
-            (kept, reviewers)
+            (cache, kept, reviewers)
         };
         let kept = kept
             .into_par_iter()
             .map_init(
-                || diff::Worker::new(self.repo.to_thread_local(), &self.revisions),
+                || diff::Worker::new(self.repo.to_thread_local(), &cache),
                 |worker, (meta, numstat)| Ok((meta, worker.numstat(numstat)?)),
             )
             .collect::<Result<_>>()?;

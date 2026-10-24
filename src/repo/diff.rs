@@ -8,48 +8,50 @@ use gix::diff::blob::platform::prepare_diff::Operation;
 use gix::object::tree::EntryKind;
 use gix::object::tree::diff::Change;
 
-use super::{Numstat, OBJECT_CACHE_BYTES, Revisions};
+use super::{Numstat, OBJECT_CACHE_BYTES};
 use crate::error::{Error, Result, Source};
 use crate::model::DiffStat;
 
-/// Per-rayon-worker state: a thread-local repository and two diff resource caches built once and
+/// Per-rayon-worker state: a thread-local repository and two copies of a diff resource cache,
 /// reused for every commit this worker handles. `gix::Tree::stats` would instead build a fresh
 /// cache per call, which re-parses the on-disk index and reassembles the attribute stack each time;
 /// on a large history that rebuild, not the diff itself, dominates the runtime.
-pub(super) struct Worker<'a> {
+pub(super) struct Worker {
     repo: gix::Repository,
-    revisions: &'a Revisions,
     // `for_each_to_obtain_tree_with_cache` holds one cache for the tree walk while each change's
-    // line diff needs another, so a worker keeps two. They are built lazily because the cache
-    // constructor is fallible and rayon's `map_init` initializer cannot return a `Result`.
-    caches: Option<(gix::diff::blob::Platform, gix::diff::blob::Platform)>,
+    // line diff needs another, so a worker keeps two.
+    walk_cache: gix::diff::blob::Platform,
+    count_cache: gix::diff::blob::Platform,
 }
 
-impl<'a> Worker<'a> {
-    pub(super) fn new(mut repo: gix::Repository, revisions: &'a Revisions) -> Self {
+impl Worker {
+    pub(super) fn new(mut repo: gix::Repository, cache: &gix::diff::blob::Platform) -> Self {
         repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
+        let mut count_cache = cache.clone();
+        // numstat counts lines with the internal diff, whatever diff driver the attributes name.
+        count_cache
+            .options
+            .skip_internal_diff_if_external_is_configured = false;
         Self {
             repo,
-            revisions,
-            caches: None,
+            walk_cache: cache.clone(),
+            count_cache,
         }
     }
 
     pub(super) fn numstat(&mut self, numstat: Numstat) -> Result<DiffStat> {
-        let (id, base) = match numstat {
-            Numstat::Diff { id, base } => (id, base),
-            Numstat::Known(diff) => return Ok(diff),
-        };
-        if self.caches.is_none() {
-            let walk = self.revisions.diff_cache(&self.repo)?;
-            let mut count = walk.clone();
-            // numstat counts lines with the internal diff, whatever diff driver the attributes name.
-            count.options.skip_internal_diff_if_external_is_configured = false;
-            self.caches = Some((walk, count));
+        match numstat {
+            Numstat::Diff { id, base } => {
+                let Self {
+                    repo,
+                    walk_cache,
+                    count_cache,
+                } = self;
+                diff_numstat(repo, walk_cache, count_cache, id, base)
+                    .map_err(|e| in_partial_clone(repo, e))
+            }
+            Numstat::Known(diff) => Ok(diff),
         }
-        let Self { repo, caches, .. } = self;
-        let (walk_cache, count_cache) = caches.as_mut().expect("initialized above");
-        diff_numstat(repo, walk_cache, count_cache, id, base).map_err(|e| in_partial_clone(repo, e))
     }
 }
 
@@ -123,9 +125,7 @@ fn in_partial_clone(repo: &gix::Repository, e: Error) -> Error {
 }
 
 /// Call `visit` with each change from the tree of commit `base`, or the empty tree without a
-/// `base`, to the tree of commit `id`. Equivalent to `gix::Tree::stats`, but driving a
-/// caller-owned cache so the index and attribute stack are read once per worker rather than per
-/// commit.
+/// `base`, to the tree of commit `id`, through the caller's cache.
 fn for_each_change(
     repo: &gix::Repository,
     walk_cache: &mut gix::diff::blob::Platform,
