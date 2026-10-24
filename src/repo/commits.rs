@@ -34,7 +34,10 @@ pub(super) fn read(
                 .is_some_and(|s| s.binary_search(&id).is_ok());
             // A merge adds nothing, as `git log --numstat` reports it. jj counts a merge against
             // its auto-merged parents, which git never does, so a grafted merge at the shallow
-            // boundary diffs its whole tree like any other boundary commit.
+            // boundary diffs its whole tree like any other boundary commit. A numstat from jj wins
+            // over the boundary rule: jj diffs a boundary commit against its virtual root commit,
+            // which is the same whole-tree diff, and only jj sees past a conflict's `.jjconflict-*`
+            // trees.
             let is_merge = commit.parents.len() > 1;
             let numstat = if is_merge && !is_boundary {
                 Numstat::Known(DiffStat::default())

@@ -32,6 +32,35 @@ impl Drop for Fixture {
 impl Fixture {
     /// Create a workspace with `jj git init` and the given init flags.
     fn init(flags: &[&str]) -> Self {
+        Self::init_in(|ws| std::fs::create_dir(ws).unwrap(), flags)
+    }
+
+    /// Colocate a workspace with a `git clone --depth` of `bookmark` from `source`'s git store.
+    /// The clone skips the checkout, since a conflicted commit's tree holds jj's `.jjconflict-*`
+    /// directories, which jj would then snapshot as new files.
+    fn shallow_clone(source: &Fixture, bookmark: &str, depth: &str) -> Self {
+        let url = format!("file://{}", source.jj(&["git", "root"]));
+        Self::init_in(
+            |ws| {
+                let dest = ws.to_str().unwrap();
+                let args = [
+                    "clone",
+                    "--no-checkout",
+                    "--depth",
+                    depth,
+                    "--branch",
+                    bookmark,
+                    &url,
+                    dest,
+                ];
+                git(ws.parent().unwrap(), &args);
+            },
+            &["--colocate"],
+        )
+    }
+
+    /// Create the workspace directory with `create_ws`, then run `jj git init` with `flags` there.
+    fn init_in(create_ws: impl FnOnce(&Path), flags: &[&str]) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let config = dir.path().join("config.toml");
         std::fs::write(
@@ -40,7 +69,7 @@ impl Fixture {
         )
         .unwrap();
         let ws = dir.path().join("ws");
-        std::fs::create_dir(&ws).unwrap();
+        create_ws(&ws);
         let mut fixture = Self {
             _dir: dir,
             config,
@@ -338,6 +367,36 @@ fn conflicted_merges_add_nothing() {
     let r = report(&repo, &options(Some("@ & conflicts()")));
 
     assert_eq!(counts(total(&r)), (1, 0, 0, 0, 0), "{r:#?}");
+}
+
+/// A clone that is shallow from jj's conflicted commit makes that commit a shallow boundary commit.
+/// jj diffs a boundary commit against its virtual root commit, so jj's numstat is the whole-tree
+/// diff the boundary rule asks for, and only jj materializes the conflict. A git diff against the
+/// empty tree would also count each `.jjconflict-*` file.
+#[test]
+fn conflicted_shallow_boundary_counts_its_materialized_tree() {
+    if !jj_available() || !common::git_available() {
+        eprintln!("jj or git not available; skipping integration test");
+        return;
+    }
+    let source = conflict_fixture();
+    source.jj(&["bookmark", "create", "kid", "-r", "@"]);
+    source.jj(&["git", "export"]);
+    let f = Fixture::shallow_clone(&source, "kid", "2");
+    let boundary = f.jj(&["log", "--no-graph", "-r", "kid-", "-T", "commit_id"]);
+    let shallow = std::fs::read_to_string(f.ws.join(".git/shallow")).unwrap();
+    assert_eq!(
+        shallow.trim(),
+        boundary,
+        "the conflicted commit is the boundary"
+    );
+
+    let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
+    let r = report(&repo, &options(Some("kid-")));
+
+    // Against `root()`, the materialized tree is `a.txt` alone, all of it added.
+    let t = total(&r);
+    assert_eq!((t.commits, t.num_files, t.deletions), (1, 1, 0), "{r:#?}");
 }
 
 /// jj wraps log lines at `COLUMNS` when `ui.log-word-wrap` is set, even with stdout piped. A
