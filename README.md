@@ -139,8 +139,8 @@ porcelain:
   Renaming one without repointing it is one changed file with no line changes, as git pairs the rename.
 - **Partial clones** (`git clone --filter=blob:none`) fail with an error that says the clone lacks objects, because gitoxide does not fetch missing objects the way git does.
   Running `git log --numstat` over the same range first fetches them.
-- **Line counts** come from gitoxide's diff engine, which can differ from git's by a tiny margin on some hunks (a different but equally valid diff).
-  File and net counts match git's rename-aware output.
+- **Line counts** follow `diff.algorithm` as git does, but gitoxide's diff implementations can pick a different diff than git's on some files, most visibly on large rewrites, so insertions and deletions can differ from `git log --numstat`.
+  gitoxide has no `patience` algorithm and uses `histogram` instead. File and net counts are unaffected.
 - **SHA-256 repositories** (`git init --object-format=sha256`) are not supported, as gitoxide cannot read them yet.
 - **Commit encodings** other than UTF-8 are not converted: the `encoding` header is ignored and non-UTF-8 author names render with replacement characters, where `git log` would re-encode them.
   Grouping and counts are unaffected, since authors are grouped by their raw bytes.

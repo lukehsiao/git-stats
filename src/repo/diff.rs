@@ -272,7 +272,12 @@ fn file_lines(
     let prep = cache.prepare_diff().expect("both sides are set above");
     match prep.operation {
         Operation::InternalDiff { algorithm } => {
-            let input = prep.interned_input();
+            // gix's own `interned_input` strips line endings, so `a` and `a\n` would compare
+            // equal. git compares lines with their endings, so the diff keeps them.
+            let input = gix::diff::blob::InternedInput::new(
+                prep.old.intern_source(),
+                prep.new.intern_source(),
+            );
             let diff = gix::diff::blob::Diff::compute(algorithm, &input);
             Ok(Some((
                 u64::from(diff.count_additions()),

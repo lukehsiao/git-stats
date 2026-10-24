@@ -426,6 +426,30 @@ fn identical_contents_follow_each_paths_attributes() {
     assert_eq!(sum(&read(&repo, Some("HEAD"))), (1, want));
 }
 
+/// git compares lines with their endings, so a line that gains its final newline, or a file
+/// rewritten from LF to CRLF, changes every line it touches.
+#[test]
+fn line_endings_count_like_git_numstat() {
+    let mut b = RepoBuilder::new();
+    let base = b.commit(ada().file("eof.txt", "a").file("crlf.txt", "1\n2\n3\n"));
+    b.commit(
+        ada()
+            .parent(base)
+            .file("eof.txt", "a\n")
+            .file("crlf.txt", "1\r\n2\r\n3\r\n"),
+    );
+    let (_dir, repo) = b.open();
+    let commits = read(&repo, Some("HEAD~1..HEAD"));
+
+    // git log --numstat: `3 3 crlf.txt` and `1 1 eof.txt`.
+    let want = DiffStat {
+        insertions: 4,
+        deletions: 4,
+        files: 2,
+    };
+    assert_eq!(sum(&commits), (1, want), "{commits:#?}");
+}
+
 /// A file whose contents the repository lacks fails the read rather than counting as nothing. A
 /// modification stops gix's tree walk partway, which is the harder case.
 #[test]
