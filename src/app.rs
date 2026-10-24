@@ -5,7 +5,7 @@
 use regex::Regex;
 
 use crate::error::Result;
-use crate::logic::{aggregate, filter, render, sort};
+use crate::logic::{filter, render, table};
 use crate::model::Options;
 use crate::repo::{self, Repo, WalkedCommit};
 
@@ -34,7 +34,7 @@ pub fn run(repo: &Repo, opts: &Options) -> Result<String> {
     // Reviews intentionally use the full range, ignoring the author/date
     // filters, to match the original tool's behavior.
     if opts.reviews {
-        let reviews = aggregate::aggregate_reviews(walked.iter().map(|w| &w.meta), opts.email);
+        let reviews = table::reviews_table(walked.iter().map(|w| &w.meta), opts.email);
         if !reviews.is_empty() {
             // The blank line only separates the tables; without a stats table
             // the reviews must start at the top.
@@ -64,21 +64,18 @@ fn stats_section(
     // READ: numstat only the survivors.
     let diffs = repo.numstats(&kept)?;
 
-    // PROCESS: aggregate, total, sort.
-    let rows: Vec<aggregate::CommitStat> = kept
+    // PROCESS: build the table.
+    let rows: Vec<table::CommitStat> = kept
         .iter()
         .zip(diffs)
-        .map(|(w, diff)| aggregate::CommitStat {
-            author_key: aggregate::author_key(&w.meta.author, opts.email),
+        .map(|(w, diff)| table::CommitStat {
+            author_key: table::author_key(&w.meta.author, opts.email),
             diff,
         })
         .collect();
-    let mut stats = aggregate::aggregate(&rows);
-    if stats.is_empty() {
+    let Some(stats) = table::stats_table(&rows, opts.sort, opts.reverse) else {
         return Ok(String::new());
-    }
-    sort::sort_stats(&mut stats, opts.sort, opts.reverse);
-    stats.push(aggregate::compute_totals(&stats));
+    };
 
     let mut section = render::render_stats(&stats);
     section.push('\n');

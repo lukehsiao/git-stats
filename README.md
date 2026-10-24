@@ -89,7 +89,7 @@ Arguments:
 Options:
   -e, --email            Show the email address of each author
   -r, --reviews          Show who reviewed/tested commits based on `Acked-by`, `Tested-by`, and `Reviewed-by` git trailers
-  -s, --sort <SORT>      What column to sort the stats table by. The reviewers table always sorts by commits [default: commits] [possible values: author, commits, files, insertions, deletions, net]
+  -s, --sort <SORT>      What column to sort the stats table by. Names sort by byte value, so uppercase comes before lowercase. The reviewers table always sorts by commits [default: commits] [possible values: author, commits, files, insertions, deletions, net]
       --reverse          Reverse the sort order of the stats table: counts ascending, authors Z to A
   -a, --author <AUTHOR>  Limit the commits output to ones with author header lines that match the specified pattern (regular expression)
       --since <SINCE>    Limit the commits output to ones more recent than a specific date
