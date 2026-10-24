@@ -4,7 +4,7 @@
 mod common;
 
 use git_stats::app;
-use git_stats::model::{Author, CommitMeta, DiffStat, Options, Trailer};
+use git_stats::model::{CommitMeta, Contributor, DiffStat, Options, Trailer};
 use git_stats::repo::{NulledCommit, Repo};
 
 use common::{author, counts, has_author, options, report, reviewer, total};
@@ -12,7 +12,7 @@ use common::{author, counts, has_author, options, report, reviewer, total};
 fn commit(name: &str, email: &str, time: i64, diff: DiffStat) -> NulledCommit {
     NulledCommit {
         meta: CommitMeta {
-            author: Author {
+            author: Contributor {
                 name: name.to_string(),
                 email: email.to_string(),
             },

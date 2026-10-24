@@ -129,6 +129,9 @@ porcelain:
   This is a subset of git's full approxidate, and filtering is on the committer date.
 - **`--author`.** Matches against the mailmap-resolved author (`Name <email>`), whereas `git log --author` matches the raw author header.
   These differ only for repositories that carry a `.mailmap`.
+- **Empty names and emails.** An author or reviewer with an empty name shows as their email, and each email gets its own row.
+  Without `--email`, `git shortlog` instead groups them all under one blank name; with it, git shows ` <email>`.
+  With `--email`, a contributor without an email shows as just the name, where `git shortlog -e` shows `Name <>`.
 - **Merge commits** count as commits but contribute no line or file changes, matching the default of `git log --numstat`.
 - **Shallow clones** work: commits at the shallow boundary diff against the empty tree, exactly as `git log --numstat` shows them.
   A warning on stderr notes that the truncated history makes the stats differ from a full clone's.

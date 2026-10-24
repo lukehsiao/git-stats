@@ -59,7 +59,7 @@ fn stats_table(
         .iter()
         .zip(diffs)
         .map(|(w, diff)| table::CommitStat {
-            author_key: table::author_key(&w.meta.author, opts.email),
+            key: w.meta.author.key(opts.email),
             diff,
         })
         .collect();
