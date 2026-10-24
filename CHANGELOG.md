@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.2
+
+### Patch Changes
+
+- [`1e64b0f`](https://github.com/lukehsiao/git-stats/commit/1e64b0f90b7bae13e5c8a161167f4d3062e26397) - **fix**: A file swapped with a submodule now counts as one changed file, with the file's lines on one side and the `Subproject commit` line on the other, as `git log --numstat` counts it. Before, the change counted as nothing. A file whose contents cannot be read now fails the run instead of counting as nothing, and in a partial clone (`git clone --filter=blob:none`) the error says the clone lacks objects and how to fetch them. Before, a fresh partial clone silently undercounted, counting only changes whose contents were present, or failed with an unexplained "could not compute diff stats" error.
+
+- [`b02f363`](https://github.com/lukehsiao/git-stats/commit/b02f3637ac3ef68c9862cd3fea2be21684163975) - **fix**: Line counts now compare lines with their endings, as `git log --numstat` does. A line that gains or loses its final newline now counts as one insertion and one deletion, and a file converted between LF and CRLF counts every line it changes. Before, both counted as no change, so totals could be slightly lower than git's.
+
+- [`d8c4532`](https://github.com/lukehsiao/git-stats/commit/d8c45320fd50f2e0c5281c1fa60978ffa7bde6de) - **fix**: A commit whose tree cannot be read now fails with an error that names the commit. Before, the error said only "could not read commit data" or "could not compute diff stats".
+
+- [`87c8100`](https://github.com/lukehsiao/git-stats/commit/87c8100890b0c806b205b6629437198f994173bb) - **fix**: The shallow-clone warning now appears only when the range reaches the shallow boundary. Before, it appeared for every range in a shallow clone, even one like `HEAD~3..HEAD` whose commits are all present. A revision that does not resolve in a shallow clone now fails with an error that says the clone may lack it.
+
+<pre>
+$ git-stats v0.3.1..v0.3.2
+Author      Commits  Changed Files  Insertions  Deletions  Net Δ
+Luke Hsiao       17             99       +3683      -2977   +706
+Total            17             99       +3683      -2977   +706
+</pre>
+
 ## 0.3.1
 
 ### Patch Changes
