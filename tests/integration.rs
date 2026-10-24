@@ -1,6 +1,6 @@
-//! A narrow integration test against a real, throwaway git repository. It
-//! guards against drift between the nulled [`Repo`] used elsewhere and the
-//! actual gix-backed implementation (range walking, numstat, trailers).
+//! A narrow integration test against a real, throwaway git repository. It guards against drift
+//! between the nulled [`Repo`] used elsewhere and the actual gix-backed implementation (range
+//! walking, numstat, trailers).
 
 use std::fmt::Write as _;
 use std::io::{Read as _, Write as _};
@@ -149,8 +149,8 @@ fn symmetric_difference_hides_every_merge_base() {
     git(p, &["config", "user.name", "Ada"]);
     git(p, &["config", "user.email", "ada@example.com"]);
 
-    // Criss-cross history: each branch merges the other's first commit, so
-    // br-a...br-b has two merge bases (A and B), not one.
+    // Criss-cross history: each branch merges the other's first commit, so br-a...br-b has two
+    // merge bases (A and B), not one.
     std::fs::write(p.join("base.txt"), "base\n").unwrap();
     git(p, &["add", "."]);
     git(p, &["commit", "-q", "-m", "base"]);
@@ -176,8 +176,8 @@ fn symmetric_difference_hides_every_merge_base() {
     let repo = Repo::open(p, Vcs::Git).unwrap();
     let r = report(&repo, &options(Some("br-a...br-b")));
 
-    // git rev-list --count br-a...br-b is 2: only the two cross merges.
-    // Hiding just one merge base leaks the other into the count (3 commits).
+    // git rev-list --count br-a...br-b is 2: only the two cross merges. Hiding just one merge base
+    // leaks the other into the count (3 commits).
     assert_eq!(
         total(&r).commits,
         2,
@@ -185,9 +185,9 @@ fn symmetric_difference_hides_every_merge_base() {
     );
 }
 
-/// Three commits on main with both tag flavors on the middle commit: the shape
-/// `git describe`-driven release ranges produce. The tempdir is returned so the
-/// repository outlives the test body.
+/// Three commits on main with both tag flavors on the middle commit: the shape `git
+/// describe`-driven release ranges produce. The tempdir is returned so the repository outlives the
+/// test body.
 fn tag_fixture() -> (tempfile::TempDir, Repo) {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path();
@@ -234,9 +234,8 @@ fn annotated_tag_range_excludes_commits_behind_the_tag() {
     let (_dir, repo) = tag_fixture();
     let r = report(&repo, &options(Some("annotated..HEAD")));
 
-    // The tag object must be peeled to its commit before going into the hidden
-    // set; an unpeeled tag OID matches nothing and the range silently degrades
-    // to whole-repo history (3 commits here).
+    // The tag object must be peeled to its commit before going into the hidden set; an unpeeled tag
+    // OID matches nothing and the range silently degrades to whole-repo history (3 commits here).
     assert_eq!(
         total(&r).commits,
         1,
@@ -278,8 +277,7 @@ fn a_bare_annotated_tag_resolves_to_its_target_commit() {
         "a bare annotated tag should walk from its target commit:\n{r:#?}"
     );
 
-    // git peels tags recursively, so a tag pointing at another tag must
-    // resolve to the same commit.
+    // git peels tags recursively, so a tag pointing at another tag must resolve to the same commit.
     git(
         dir.path(),
         &["tag", "-a", "-m", "wrap", "nested", "annotated"],
@@ -321,8 +319,8 @@ fn symmetric_difference_with_an_annotated_tag_resolves() {
     git(p, &["commit", "-q", "-m", "main only"]);
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    // Unlike the two-dot tests, `...` also feeds the endpoints to the
-    // merge-base computation, which needs commit OIDs rather than tag OIDs.
+    // Unlike the two-dot tests, `...` also feeds the endpoints to the merge-base computation, which
+    // needs commit OIDs rather than tag OIDs.
     let r = report(&repo, &options(Some("main...feature-tag")));
 
     assert_eq!(
@@ -352,9 +350,8 @@ fn filter_validation_precedes_the_walk() {
     let mut opts = options(Some("no-such-ref..HEAD"));
     opts.since = Some("not-a-date".to_string());
 
-    // Both the range and the date are bad. The date must win: filters are
-    // cheap to validate and should error before a potentially expensive walk
-    // of the whole range even starts.
+    // Both the range and the date are bad. The date must win: filters are cheap to validate and
+    // should error before a potentially expensive walk of the whole range even starts.
     let err = app::run(&repo, &opts).unwrap_err();
     assert!(
         matches!(err, git_stats::Error::InvalidDate { .. }),
@@ -375,9 +372,9 @@ fn binary_file_changes_count_as_changed_files() {
     git(p, &["config", "user.name", "Ada"]);
     git(p, &["config", "user.email", "ada@example.com"]);
 
-    // One text file and one binary file (NUL bytes) in the same commit.
-    // `git log --numstat` lists the binary file as `-  -  path` and
-    // `git diff --shortstat` reports "2 files changed, 2 insertions(+)".
+    // One text file and one binary file (NUL bytes) in the same commit. `git log --numstat` lists
+    // the binary file as `-  -  path` and `git diff --shortstat` reports "2 files changed, 2
+    // insertions(+)".
     std::fs::write(p.join("a.txt"), "one\ntwo\n").unwrap();
     std::fs::write(p.join("blob.bin"), [0u8, 159, 146, 150, 0, 10]).unwrap();
     git(p, &["add", "."]);
@@ -390,10 +387,9 @@ fn binary_file_changes_count_as_changed_files() {
     assert_eq!(counts(total(&r)), (1, 2, 2, 0, 2), "{r:#?}");
 }
 
-/// `git stats | head` style usage closes stdout before the report is fully
-/// written. Rust ignores SIGPIPE, so a plain `print!` panics on the resulting
-/// EPIPE; the binary must instead die quietly with the same status a shell
-/// reports when git itself is killed by SIGPIPE (128 + 13).
+/// `git stats | head` style usage closes stdout before the report is fully written. Rust ignores
+/// SIGPIPE, so a plain `print!` panics on the resulting EPIPE; the binary must instead die quietly
+/// with the same status a shell reports when git itself is killed by SIGPIPE (128 + 13).
 #[test]
 fn broken_pipe_exits_quietly() {
     if !git_available() {
@@ -405,9 +401,9 @@ fn broken_pipe_exits_quietly() {
     let p = dir.path();
     git(p, &["init", "-q", "-b", "main"]);
 
-    // Enough single-commit authors that the rendered table exceeds the pipe
-    // buffer (64 KiB), so the write blocks until the reader goes away rather
-    // than racing the reader's exit. Empty commits keep fast-import instant.
+    // Enough single-commit authors that the rendered table exceeds the pipe buffer (64 KiB), so the
+    // write blocks until the reader goes away rather than racing the reader's exit. Empty commits
+    // keep fast-import instant.
     let mut input = String::new();
     for i in 0..2000 {
         let msg = format!("c{i}");
@@ -463,9 +459,9 @@ fn broken_pipe_exits_quietly() {
     );
 }
 
-/// git honors `GIT_DIR` when locating the repository, and sets it itself when
-/// running hooks, so `GIT_DIR=... git stats` from outside the repository must
-/// work exactly like `GIT_DIR=... git log` does.
+/// git honors `GIT_DIR` when locating the repository, and sets it itself when running hooks, so
+/// `GIT_DIR=... git stats` from outside the repository must work exactly like `GIT_DIR=... git log`
+/// does.
 #[test]
 fn git_dir_environment_override_is_honored() {
     if !git_available() {
@@ -505,9 +501,8 @@ fn git_dir_environment_override_is_honored() {
     );
 }
 
-/// `.mailmap` resolution must match `git shortlog -sne`: commits recorded
-/// under an old identity fold into the mapped one, while authors the map
-/// does not mention stay untouched.
+/// `.mailmap` resolution must match `git shortlog -sne`: commits recorded under an old identity
+/// fold into the mapped one, while authors the map does not mention stay untouched.
 #[test]
 fn mailmap_folds_identities_like_git_shortlog() {
     if !git_available() {
@@ -587,8 +582,8 @@ fn submodule_changes_count_like_git_numstat() {
     git(&inner, &["commit", "-q", "-m", "inner 2"]);
     let sha2 = git(&inner, &["rev-parse", "HEAD"]);
 
-    // Gitlink entries via plumbing keep the fixture hermetic: no .gitmodules,
-    // no clone, just a tree entry of mode 160000 pointing at the inner commits.
+    // Gitlink entries via plumbing keep the fixture hermetic: no .gitmodules, no clone, just a tree
+    // entry of mode 160000 pointing at the inner commits.
     let outer = p.join("outer");
     std::fs::create_dir(&outer).unwrap();
     git(&outer, &["init", "-q", "-b", "main"]);
@@ -607,15 +602,13 @@ fn submodule_changes_count_like_git_numstat() {
     let repo = Repo::open(&outer, Vcs::Git).unwrap();
     let r = report(&repo, &options(Some("HEAD")));
 
-    // git log --numstat: base is `1 0 r.txt`, adding the gitlink is `1 0 sub`
-    // (one "Subproject commit" line), repointing it is `1 1 sub`. Totals:
-    // 3 files, +3, -1.
+    // git log --numstat: base is `1 0 r.txt`, adding the gitlink is `1 0 sub` (one "Subproject
+    // commit" line), repointing it is `1 1 sub`. Totals: 3 files, +3, -1.
     assert_eq!(counts(total(&r)), (3, 3, 3, 1, 2), "{r:#?}");
 }
 
-/// A renamed submodule is paired by the rename tracker into git's single
-/// `0 0 old => new` entry, so it counts as one changed file with no line
-/// changes rather than as an addition plus a deletion.
+/// A renamed submodule is paired by the rename tracker into git's single `0 0 old => new` entry, so
+/// it counts as one changed file with no line changes rather than as an addition plus a deletion.
 #[test]
 fn gitlink_renames_count_as_one_unchanged_file() {
     if !git_available() {
@@ -640,8 +633,8 @@ fn gitlink_renames_count_as_one_unchanged_file() {
     git(&outer, &["init", "-q", "-b", "main"]);
     git(&outer, &["config", "user.name", "Ada"]);
     git(&outer, &["config", "user.email", "ada@example.com"]);
-    // The walk reads its diff options from repository config, so pin rename
-    // detection rather than inheriting whatever the developer set globally.
+    // The walk reads its diff options from repository config, so pin rename detection rather than
+    // inheriting whatever the developer set globally.
     git(&outer, &["config", "diff.renames", "true"]);
     std::fs::write(outer.join("r.txt"), "readme\n").unwrap();
     git(&outer, &["add", "."]);
@@ -657,8 +650,8 @@ fn gitlink_renames_count_as_one_unchanged_file() {
     let repo = Repo::open(&outer, Vcs::Git).unwrap();
     let r = report(&repo, &options(Some("HEAD")));
 
-    // base is 1 file +1, adding the gitlink is 1 file +1, and the rename is
-    // 1 file whose `Subproject commit` line is unchanged.
+    // base is 1 file +1, adding the gitlink is 1 file +1, and the rename is 1 file whose
+    // `Subproject commit` line is unchanged.
     assert_eq!(counts(total(&r)), (3, 3, 2, 0, 2), "{r:#?}");
 }
 
@@ -686,20 +679,20 @@ fn shallow_clones_treat_boundary_commits_as_parentless() {
         git(&origin, &["commit", "-q", "-m", &format!("c{i}")]);
     }
 
-    // A depth-2 clone keeps c2 and c3, with c2 as the shallow boundary: its
-    // parent c1 exists in c2's header but not in the object database. The
-    // file:// URL matters; a bare local path would not produce a shallow clone.
+    // A depth-2 clone keeps c2 and c3, with c2 as the shallow boundary: its parent c1 exists in
+    // c2's header but not in the object database. The file:// URL matters; a bare local path would
+    // not produce a shallow clone.
     let url = format!("file://{}", origin.display());
     git(p, &["clone", "-q", "--depth", "2", &url, "shallow"]);
 
     let repo = Repo::open(p.join("shallow"), Vcs::Git).unwrap();
-    // The binary warns on shallow clones via this probe; the full-clone
-    // control lives in `reads_a_real_repository`.
+    // The binary warns on shallow clones via this probe; the full-clone control lives in
+    // `reads_a_real_repository`.
     assert!(repo.is_shallow(), "depth-2 clone should detect as shallow");
     let r = report(&repo, &options(Some("HEAD")));
 
-    // git log --numstat here shows c3 as +1 and the boundary commit c2 as its
-    // whole tree (+2), exactly like a root commit, so the total is +3.
+    // git log --numstat here shows c3 as +1 and the boundary commit c2 as its whole tree (+2),
+    // exactly like a root commit, so the total is +3.
     assert_eq!(
         total(&r).commits,
         2,
@@ -727,8 +720,8 @@ fn shallow_boundary_merges_diff_like_root_commits() {
     git(&origin, &["config", "user.name", "Ada"]);
     git(&origin, &["config", "user.email", "ada@example.com"]);
 
-    // History whose second-newest commit is a merge: base, a feature branch,
-    // a diverging main, the merge, and one commit on top.
+    // History whose second-newest commit is a merge: base, a feature branch, a diverging main, the
+    // merge, and one commit on top.
     std::fs::write(origin.join("a.txt"), "a\n").unwrap();
     git(&origin, &["add", "."]);
     git(&origin, &["commit", "-q", "-m", "base"]);
@@ -745,10 +738,10 @@ fn shallow_boundary_merges_diff_like_root_commits() {
     git(&origin, &["add", "."]);
     git(&origin, &["commit", "-q", "-m", "top"]);
 
-    // The depth-2 clone keeps "top" and the merge, grafting the merge as the
-    // parentless shallow boundary. Its header still names two parents, but
-    // git neither treats it as a merge nor skips it: git log --numstat shows
-    // its entire tree (a, b, c), plus d from "top", so 4 files and +4 lines.
+    // The depth-2 clone keeps "top" and the merge, grafting the merge as the parentless shallow
+    // boundary. Its header still names two parents, but git neither treats it as a merge nor skips
+    // it: git log --numstat shows its entire tree (a, b, c), plus d from "top", so 4 files and +4
+    // lines.
     let url = format!("file://{}", origin.display());
     git(p, &["clone", "-q", "--depth", "2", &url, "shallow"]);
 
@@ -772,16 +765,15 @@ fn shallow_boundary_merges_diff_like_root_commits() {
     );
 }
 
-/// A commit whose header git itself would never write (non-numeric committer
-/// timestamp) fails gitoxide's strict decode. Tolerating such fsck-level
-/// corruption is out of scope, but the error must name the offending commit;
-/// an anonymous "object parsing failed" is undiagnosable in a large history.
+/// A commit whose header git itself would never write (non-numeric committer timestamp) fails
+/// gitoxide's strict decode. Tolerating such fsck-level corruption is out of scope, but the error
+/// must name the offending commit; an anonymous "object parsing failed" is undiagnosable in a large
+/// history.
 ///
-/// The named path requires a commit-graph (gc writes one by default since
-/// git 2.24): with it, traversal reads parents from the graph and our decode
-/// is the first to touch the corrupt object. Without it, gitoxide's walk
-/// iterator fails first and its error carries no id, which only gitoxide can
-/// fix upstream.
+/// The named path requires a commit-graph (gc writes one by default since git 2.24): with it,
+/// traversal reads parents from the graph and our decode is the first to touch the corrupt object.
+/// Without it, gitoxide's walk iterator fails first and its error carries no id, which only
+/// gitoxide can fix upstream.
 #[test]
 fn decode_failures_name_the_offending_commit() {
     if !git_available() {
@@ -859,8 +851,8 @@ fn merge_commits_are_counted_but_add_no_lines() {
     let repo = Repo::open(p, Vcs::Git).unwrap();
     let r = report(&repo, &options(Some("HEAD")));
 
-    // Four commits (base, feature, main, merge); the merge contributes no lines,
-    // so insertions total only the three single-line file additions.
+    // Four commits (base, feature, main, merge); the merge contributes no lines, so insertions
+    // total only the three single-line file additions.
     assert_eq!(
         total(&r).commits,
         4,

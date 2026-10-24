@@ -1,9 +1,8 @@
-//! Infrastructure: the only module that talks to gix, the `jj` CLI, and the
-//! filesystem.
+//! Infrastructure: the only module that talks to gix, the `jj` CLI, and the filesystem.
 //!
-//! [`Repo`] has two constructors. [`Repo::open`] reads a real repository;
-//! [`Repo::create_null`] returns an in-memory stand-in driven by canned commits,
-//! so application and logic code can be tested without touching git.
+//! [`Repo`] has two constructors. [`Repo::open`] reads a real repository; [`Repo::create_null`]
+//! returns an in-memory stand-in driven by canned commits, so application and logic code can be
+//! tested without touching git.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -13,8 +12,8 @@ use rayon::prelude::*;
 use crate::error::{Error, Result};
 use crate::model::{Author, CommitMeta, DiffStat, Trailer, Vcs};
 
-/// A commit yielded by [`Repo::walk`]: its logic-facing metadata plus an opaque
-/// handle the wrapper uses to compute the numstat later.
+/// A commit yielded by [`Repo::walk`]: its logic-facing metadata plus an opaque handle the wrapper
+/// uses to compute the numstat later.
 pub struct WalkedCommit {
     pub meta: CommitMeta,
     is_merge: bool,
@@ -22,8 +21,8 @@ pub struct WalkedCommit {
 }
 
 impl WalkedCommit {
-    /// Where the numstat comes from. A merge contributes nothing, matching
-    /// `git log --numstat`, so it needs no diff.
+    /// Where the numstat comes from. A merge contributes nothing, matching `git log --numstat`, so
+    /// it needs no diff.
     fn numstat_source(&self) -> Handle {
         if self.is_merge {
             Handle::Known(DiffStat::default())
@@ -38,8 +37,8 @@ impl WalkedCommit {
 enum Handle {
     /// gix diffs the commit against its first parent.
     Diff(gix::ObjectId),
-    /// The numstat is already known: canned in a nulled repository, or
-    /// computed by jj where a conflict makes the git trees meaningless.
+    /// The numstat is already known: canned in a nulled repository, or computed by jj where a
+    /// conflict makes the git trees meaningless.
     Known(DiffStat),
 }
 
@@ -60,13 +59,13 @@ enum Backend {
     Null(Vec<NulledCommit>),
 }
 
-/// Who selects the commits of a revision range. Either way, gix reads the
-/// selected commits from the git object store.
+/// Who selects the commits of a revision range. Either way, gix reads the selected commits from the
+/// git object store.
 enum Revisions {
     /// gix resolves a git revision range.
     Git,
-    /// The `jj` CLI evaluates a revset in the workspace rooted at this path.
-    /// jj stores every commit as a git object, so gix can read all of them.
+    /// The `jj` CLI evaluates a revset in the workspace rooted at this path. jj stores every commit
+    /// as a git object, so gix can read all of them.
     Jj(PathBuf),
 }
 
@@ -78,17 +77,16 @@ pub struct Repo {
 impl Repo {
     /// Open the repository containing `path`.
     ///
-    /// For git, this honors `GIT_DIR` and related environment variables first
-    /// (git sets them when running hooks and for `--git-dir` invocations), then
-    /// searches upward from `path`. For jj, it opens the git repository that
-    /// backs the nearest jj workspace. [`Vcs::Auto`] picks git when `GIT_DIR`
-    /// is set, and otherwise whichever of the two is nearer, with jj for a
-    /// colocated workspace.
+    /// For git, this honors `GIT_DIR` and related environment variables first (git sets them when
+    /// running hooks and for `--git-dir` invocations), then searches upward from `path`. For jj, it
+    /// opens the git repository that backs the nearest jj workspace. [`Vcs::Auto`] picks git when
+    /// `GIT_DIR` is set, and otherwise whichever of the two is nearer, with jj for a colocated
+    /// workspace.
     ///
     /// # Errors
     ///
-    /// Returns an error if no repository can be discovered, or if `jj` cannot
-    /// run or does not report a git-backed repository.
+    /// Returns an error if no repository can be discovered, or if `jj` cannot run or does not
+    /// report a git-backed repository.
     pub fn open(path: impl AsRef<Path>, vcs: Vcs) -> Result<Self> {
         let path = path.as_ref();
         let workspace = match vcs {
@@ -113,8 +111,8 @@ impl Repo {
                 },
             });
         };
-        // Reading the store location needs no snapshot of the working copy.
-        // The revset walk snapshots it later, before any commit is read.
+        // Reading the store location needs no snapshot of the working copy. The revset walk
+        // snapshots it later, before any commit is read.
         let git_dir = jj(
             &workspace,
             "git root",
@@ -122,10 +120,9 @@ impl Repo {
         )?;
         let git_dir = git_dir.strip_suffix('\n').unwrap_or(&git_dir);
         let mut repo = gix::open(git_dir).map_err(|e| Error::OpenRepository(Box::new(e)))?;
-        // gix reads `.mailmap` and `.gitattributes` from the worktree of the
-        // git store. jj's own store has none, and a colocated or external
-        // store's worktree may be another workspace. So the workspace stands
-        // in for the worktree, as the checkout does for git.
+        // gix reads `.mailmap` and `.gitattributes` from the worktree of the git store. jj's own
+        // store has none, and a colocated or external store's worktree may be another workspace. So
+        // the workspace stands in for the worktree, as the checkout does for git.
         repo.set_workdir(workspace.clone())
             .map_err(|e| Error::OpenRepository(Box::new(e)))?;
         Ok(Self {
@@ -136,9 +133,9 @@ impl Repo {
         })
     }
 
-    /// Build a nulled repository whose [`walk`](Self::walk) returns the given
-    /// commits verbatim. The revision range is ignored, since range resolution
-    /// is real-git behavior exercised separately by integration tests.
+    /// Build a nulled repository whose [`walk`](Self::walk) returns the given commits verbatim. The
+    /// revision range is ignored, since range resolution is real-git behavior exercised separately
+    /// by integration tests.
     #[must_use]
     pub fn create_null(commits: Vec<NulledCommit>) -> Self {
         Self {
@@ -158,16 +155,14 @@ impl Repo {
         }
     }
 
-    /// Read commit metadata for every commit in `range`: a git revision range,
-    /// or a revset in a jj workspace. `None` means `HEAD` for git and `::@`
-    /// for jj. Trailers are parsed only when `need_trailers` is set, since they
-    /// feed only the reviews table and decoding every commit message is costly
-    /// on large histories.
+    /// Read commit metadata for every commit in `range`: a git revision range, or a revset in a jj
+    /// workspace. `None` means `HEAD` for git and `::@` for jj. Trailers are parsed only when
+    /// `need_trailers` is set, since they feed only the reviews table and decoding every commit
+    /// message is costly on large histories.
     ///
     /// # Errors
     ///
-    /// Returns an error if the range cannot be resolved or a commit object
-    /// cannot be read.
+    /// Returns an error if the range cannot be resolved or a commit object cannot be read.
     pub fn walk(&self, range: Option<&str>, need_trailers: bool) -> Result<Vec<WalkedCommit>> {
         match &self.backend {
             Backend::Real {
@@ -175,8 +170,8 @@ impl Repo {
                 revisions,
             } => {
                 let mut repo = tsr.to_thread_local();
-                // Match `numstats`: an object cache lets the metadata read reuse
-                // commits the traversal already decoded instead of re-reading packs.
+                // Match `numstats`: an object cache lets the metadata read reuse commits the
+                // traversal already decoded instead of re-reading packs.
                 repo.object_cache_size_if_unset(8 * 1024 * 1024);
                 match revisions {
                     Revisions::Git => walk_git(&repo, range.unwrap_or("HEAD"), need_trailers),
@@ -196,13 +191,12 @@ impl Repo {
         }
     }
 
-    /// Compute the numstat for each given commit. Merge commits contribute
-    /// nothing, matching `git log --numstat`'s default.
+    /// Compute the numstat for each given commit. Merge commits contribute nothing, matching `git
+    /// log --numstat`'s default.
     ///
     /// # Errors
     ///
-    /// Returns an error if a commit's tree or its parent's tree cannot be
-    /// diffed.
+    /// Returns an error if a commit's tree or its parent's tree cannot be diffed.
     pub fn numstats(&self, commits: &[&WalkedCommit]) -> Result<Vec<DiffStat>> {
         match &self.backend {
             Backend::Real {
@@ -227,10 +221,9 @@ impl Repo {
     }
 }
 
-/// The root of the jj workspace containing `path`: the nearest ancestor with a
-/// `.jj` directory. With `stop_at_git`, a nearer `.git` ends the search, so a
-/// git repository nested inside a jj workspace stays git. A colocated
-/// workspace has both at its root and counts as jj.
+/// The root of the jj workspace containing `path`: the nearest ancestor with a `.jj` directory.
+/// With `stop_at_git`, a nearer `.git` ends the search, so a git repository nested inside a jj
+/// workspace stays git. A colocated workspace has both at its root and counts as jj.
 fn find_jj_workspace(path: &Path, stop_at_git: bool) -> Option<PathBuf> {
     let path = path.canonicalize().ok()?;
     for dir in path.ancestors() {
@@ -244,14 +237,13 @@ fn find_jj_workspace(path: &Path, stop_at_git: bool) -> Option<PathBuf> {
     None
 }
 
-/// Run `jj` in `workspace` and return its stdout. `command` names the
-/// subcommand in errors. jj's stderr passes through, so its own errors, hints,
-/// and warnings reach the user verbatim.
+/// Run `jj` in `workspace` and return its stdout. `command` names the subcommand in errors. jj's
+/// stderr passes through, so its own errors, hints, and warnings reach the user verbatim.
 fn jj(workspace: &Path, command: &'static str, args: &[&str]) -> Result<String> {
     let out = Command::new("jj")
         .current_dir(workspace)
-        // Keep stdout machine-readable whatever the user's jj config says. A
-        // wrapped line would split a commit's fields across two lines.
+        // Keep stdout machine-readable whatever the user's jj config says. A wrapped line would
+        // split a commit's fields across two lines.
         .args([
             "--no-pager",
             "--color=never",
@@ -275,31 +267,30 @@ fn jj(workspace: &Path, command: &'static str, args: &[&str]) -> Result<String> 
     })
 }
 
-/// Per-rayon-worker state for the real backend: a thread-local repository and
-/// two diff resource caches built once and reused for every commit this worker
-/// handles. `gix::Tree::stats` would instead build a fresh cache per call, which
-/// re-parses the on-disk index and reassembles the attribute stack each time; on
-/// a large history that rebuild, not the diff itself, dominates the runtime.
+/// Per-rayon-worker state for the real backend: a thread-local repository and two diff resource
+/// caches built once and reused for every commit this worker handles. `gix::Tree::stats` would
+/// instead build a fresh cache per call, which re-parses the on-disk index and reassembles the
+/// attribute stack each time; on a large history that rebuild, not the diff itself, dominates the
+/// runtime.
 struct Worker<'a> {
     repo: gix::Repository,
     revisions: &'a Revisions,
-    // Commits at the shallow boundary, whose parents exist in their headers
-    // but not in the object database. `None` when the clone is not shallow.
+    // Commits at the shallow boundary, whose parents exist in their headers but not in the object
+    // database. `None` when the clone is not shallow.
     shallow: Option<gix::shallow::Commits>,
-    // `for_each_to_obtain_tree_with_cache` holds one cache for the tree walk
-    // while each change's line diff needs another, so a worker keeps two. They
-    // are built lazily because the cache constructor is fallible and rayon's
-    // `map_init` initializer cannot return a `Result`.
+    // `for_each_to_obtain_tree_with_cache` holds one cache for the tree walk while each change's
+    // line diff needs another, so a worker keeps two. They are built lazily because the cache
+    // constructor is fallible and rayon's `map_init` initializer cannot return a `Result`.
     caches: Option<(gix::diff::blob::Platform, gix::diff::blob::Platform)>,
 }
 
 impl<'a> Worker<'a> {
     fn new(mut repo: gix::Repository, revisions: &'a Revisions) -> Self {
-        // Per-thread object cache so repeated tree/blob reads during diffing hit
-        // memory instead of the pack. 8 MiB comfortably holds a commit's trees.
+        // Per-thread object cache so repeated tree/blob reads during diffing hit memory instead of
+        // the pack. 8 MiB comfortably holds a commit's trees.
         repo.object_cache_size_if_unset(8 * 1024 * 1024);
-        // An unreadable shallow file degrades to "not shallow"; a boundary
-        // commit then surfaces its missing parent as a read error below.
+        // An unreadable shallow file degrades to "not shallow"; a boundary commit then surfaces its
+        // missing parent as a read error below.
         let shallow = repo.shallow_commits().ok().flatten();
         Self {
             repo,
@@ -330,16 +321,15 @@ impl<'a> Worker<'a> {
     }
 }
 
-/// A diff resource cache with the `.gitattributes` of the checkout being read:
-/// from the index of a git repository, as gix reads them, or from the files of
-/// a jj workspace.
+/// A diff resource cache with the `.gitattributes` of the checkout being read: from the index of a
+/// git repository, as gix reads them, or from the files of a jj workspace.
 fn diff_cache(repo: &gix::Repository, revisions: &Revisions) -> Result<gix::diff::blob::Platform> {
     let err = |e: gix::Error| Error::DiffStats(Box::new(e));
     match revisions {
         Revisions::Git => repo.diff_resource_cache_for_tree_diff().map_err(err),
-        // The index and `HEAD` of jj's git store may be empty, or may belong
-        // to another workspace. So attributes come only from the files in
-        // this workspace, which `Repo::open` made the worktree.
+        // The index and `HEAD` of jj's git store may be empty, or may belong to another workspace.
+        // So attributes come only from the files in this workspace, which `Repo::open` made the
+        // worktree.
         Revisions::Jj(_) => {
             let index = gix::index::State::new(repo.object_hash());
             let attributes = repo
@@ -370,8 +360,8 @@ fn walk_git(repo: &gix::Repository, range: &str, need_trailers: bool) -> Result<
             range: range.to_string(),
             source: Box::new(e),
         })?;
-    // Stream the IDs so each commit is read right after the traversal decoded
-    // it, while it is still in the object cache.
+    // Stream the IDs so each commit is read right after the traversal decoded it, while it is still
+    // in the object cache.
     let commits = walk.map(|info| {
         info.map(|info| (info.id, None))
             .map_err(|e| Error::ReadCommit(Box::new(e)))
@@ -379,14 +369,12 @@ fn walk_git(repo: &gix::Repository, range: &str, need_trailers: bool) -> Result<
     read_commits(repo, commits, need_trailers)
 }
 
-/// The `jj log` template for [`walk_jj`]: one line per commit with its ID. A
-/// commit that is conflicted, or has a conflicted parent, also gets its file,
-/// insertion, and deletion counts. jj stores a conflict as a git tree of
-/// `.jjconflict-*` directories, so a git diff that touches one would count
-/// those directories rather than the change. jj diffs only these commits. Its
-/// diff is single-threaded and, on a 12,000-commit history, roughly ten times
-/// slower than the parallel gix diff. A merge gets no counts either, because
-/// its numstat is zero whatever jj reports.
+/// The `jj log` template for [`walk_jj`]: one line per commit with its ID. A commit that is
+/// conflicted, or has a conflicted parent, also gets its file, insertion, and deletion counts. jj
+/// stores a conflict as a git tree of `.jjconflict-*` directories, so a git diff that touches one
+/// would count those directories rather than the change. jj diffs only these commits. Its diff is
+/// single-threaded and, on a 12,000-commit history, roughly ten times slower than the parallel gix
+/// diff. A merge gets no counts either, because its numstat is zero whatever jj reports.
 const JJ_LOG_TEMPLATE: &str = r#"
 commit_id ++ if(
   (conflict || parents.any(|p| p.conflict())) && parents.len() <= 1,
@@ -402,8 +390,8 @@ fn walk_jj(
     revset: &str,
     need_trailers: bool,
 ) -> Result<Vec<WalkedCommit>> {
-    // Like any jj command, `jj log` snapshots the working copy first, so `@`
-    // includes edits that are not yet committed elsewhere.
+    // Like any jj command, `jj log` snapshots the working copy first, so `@` includes edits that
+    // are not yet committed elsewhere.
     let out = jj(
         workspace,
         "log",
@@ -419,8 +407,7 @@ fn walk_jj(
     let commits = out
         .lines()
         .filter_map(|line| match parse_jj_log_line(line) {
-            // jj's `root()` is a virtual commit with an all-zero ID and no git
-            // object to read.
+            // jj's `root()` is a virtual commit with an all-zero ID and no git object to read.
             Some((id, _)) if id.is_null() => None,
             Some(commit) => Some(Ok(commit)),
             None => Some(Err(Error::JjOutput {
@@ -447,17 +434,17 @@ fn parse_jj_log_line(line: &str) -> Option<(gix::ObjectId, Option<DiffStat>)> {
     Some((id, diff))
 }
 
-/// Read the metadata of each commit in `commits`, keeping their order. Each
-/// comes with its numstat when that is already known.
+/// Read the metadata of each commit in `commits`, keeping their order. Each comes with its numstat
+/// when that is already known.
 fn read_commits(
     repo: &gix::Repository,
     commits: impl Iterator<Item = Result<(gix::ObjectId, Option<DiffStat>)>>,
     need_trailers: bool,
 ) -> Result<Vec<WalkedCommit>> {
     let mailmap = repo.open_mailmap();
-    // git grafts commits at the shallow boundary as parentless, so one whose
-    // header names several parents is not a merge there. An unreadable shallow
-    // file degrades to "not shallow", mirroring Worker::new.
+    // git grafts commits at the shallow boundary as parentless, so one whose header names several
+    // parents is not a merge there. An unreadable shallow file degrades to "not shallow", mirroring
+    // Worker::new.
     let shallow = repo.shallow_commits().ok().flatten();
     commits
         .map(|item| {
@@ -465,8 +452,8 @@ fn read_commits(
             let commit = repo
                 .find_commit(id)
                 .map_err(|e| Error::ReadCommit(Box::new(e)))?;
-            // Decode the header once; the author, committer, parents, and message
-            // accessors on `gix::Commit` would each rescan the raw bytes.
+            // Decode the header once; the author, committer, parents, and message accessors on
+            // `gix::Commit` would each rescan the raw bytes.
             let commit = commit.decode().map_err(|e| Error::DecodeCommit {
                 id: id.to_string(),
                 source: e.into(),
@@ -532,9 +519,9 @@ fn numstat_real(
         .find_commit(id)
         .map_err(|e| Error::ReadCommit(Box::new(e)))?;
     let new_tree = commit.tree().map_err(|e| Error::ReadCommit(Box::new(e)))?;
-    // A commit at the shallow boundary names parents that are not in the
-    // object database. git diffs it against the empty tree, exactly like a
-    // root commit, so do the same instead of failing on the missing parent.
+    // A commit at the shallow boundary names parents that are not in the object database. git diffs
+    // it against the empty tree, exactly like a root commit, so do the same instead of failing on
+    // the missing parent.
     let is_boundary = shallow.is_some_and(|s| s.binary_search(&id).is_ok());
     let parent = if is_boundary {
         None
@@ -550,8 +537,8 @@ fn numstat_real(
         None => repo.empty_tree(),
     };
 
-    // Equivalent to `gix::Tree::stats`, but driving caller-owned caches so the
-    // index and attribute stack are read once per worker rather than per commit.
+    // Equivalent to `gix::Tree::stats`, but driving caller-owned caches so the index and attribute
+    // stack are read once per worker rather than per commit.
     let (mut files, mut insertions, mut deletions) = (0u64, 0u64, 0u64);
     old_tree
         .changes()
@@ -572,8 +559,8 @@ fn numstat_real(
                         insertions += u64::from(counts.insertions);
                         deletions += u64::from(counts.removals);
                     }
-                    // A binary change has no line counts (numstat's `-  -  path`)
-                    // but still counts as a changed file, as in `git diff --shortstat`.
+                    // A binary change has no line counts (numstat's `-  -  path`) but still counts
+                    // as a changed file, as in `git diff --shortstat`.
                     Some(None) => files += 1,
                     None => {}
                 }
@@ -592,13 +579,12 @@ fn numstat_real(
     })
 }
 
-/// The numstat of a submodule (gitlink) change, which carries no blob to diff.
-/// git renders the pointer as a one-line `Subproject commit <hash>` pseudo-file,
-/// so an added gitlink is +1, a removed one -1, and a repointed one +1/-1. A
-/// renamed gitlink is paired into a single file whose line only changes when the
-/// commit it points to also changed, matching git's `0 0 old => new`.
-/// Returns `None` for changes not purely between gitlinks; a blob<->gitlink
-/// type change falls through to the regular blob diff.
+/// The numstat of a submodule (gitlink) change, which carries no blob to diff. git renders the
+/// pointer as a one-line `Subproject commit <hash>` pseudo-file, so an added gitlink is +1, a
+/// removed one -1, and a repointed one +1/-1. A renamed gitlink is paired into a single file whose
+/// line only changes when the commit it points to also changed, matching git's `0 0 old => new`.
+/// Returns `None` for changes not purely between gitlinks; a blob<->gitlink type change falls
+/// through to the regular blob diff.
 fn gitlink_lines(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(u64, u64)> {
     use gix::object::tree::diff::Change;
     match *change {
@@ -629,9 +615,9 @@ fn gitlink_lines(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option
 /// Tips to walk from, and commits to hide, for a revision range.
 type RangeEnds = (Vec<gix::ObjectId>, Vec<gix::ObjectId>);
 
-/// Resolve a revision range into walk tips and hidden commits. Each endpoint is
-/// fully git-spelled (refs, short hashes, `@{n}`, ...); only the `..`/`...`
-/// operators are interpreted here. Exotic gitrevisions(7) forms are unsupported.
+/// Resolve a revision range into walk tips and hidden commits. Each endpoint is fully git-spelled
+/// (refs, short hashes, `@{n}`, ...); only the `..`/`...` operators are interpreted here. Exotic
+/// gitrevisions(7) forms are unsupported.
 fn resolve_range(repo: &gix::Repository, range: &str) -> Result<RangeEnds> {
     if let Some((a, b)) = range.split_once("...") {
         let a = single(repo, default_head(a))?;
@@ -656,10 +642,9 @@ fn single(repo: &gix::Repository, rev: &str) -> Result<gix::ObjectId> {
         revision: rev.to_string(),
         source,
     };
-    // git peels tags recursively at rev-list endpoints, so an annotated tag
-    // must resolve to its target commit here. Without peeling, a tag OID on
-    // the hidden side matches nothing during the walk and the range silently
-    // degrades to whole-repo history.
+    // git peels tags recursively at rev-list endpoints, so an annotated tag must resolve to its
+    // target commit here. Without peeling, a tag OID on the hidden side matches nothing during the
+    // walk and the range silently degrades to whole-repo history.
     Ok(repo
         .rev_parse_single(rev)
         .map_err(|e| err(Box::new(e)))?
@@ -670,11 +655,10 @@ fn single(repo: &gix::Repository, rev: &str) -> Result<gix::ObjectId> {
         .id)
 }
 
-/// Every merge base of `a` and `b`, hidden from the walk to form the symmetric
-/// difference. Criss-cross histories have several, and git hides them all;
-/// hiding only the "best" one leaks the other bases' ancestries into the walk.
-/// Disjoint histories have none; then nothing is hidden and the symmetric
-/// difference is simply everything reachable from either tip.
+/// Every merge base of `a` and `b`, hidden from the walk to form the symmetric difference.
+/// Criss-cross histories have several, and git hides them all; hiding only the "best" one leaks the
+/// other bases' ancestries into the walk. Disjoint histories have none; then nothing is hidden and
+/// the symmetric difference is simply everything reachable from either tip.
 fn merge_bases(
     repo: &gix::Repository,
     a: gix::ObjectId,
@@ -690,9 +674,9 @@ fn merge_bases(
     Ok(bases.into_iter().map(gix::Id::detach).collect())
 }
 
-/// Parse a `--since`/`--until` style date into seconds since the Unix epoch.
-/// Accepts ISO 8601, RFC 2822, unix timestamps, and relative spellings like
-/// "2 weeks ago" (a documented subset of git's approxidate).
+/// Parse a `--since`/`--until` style date into seconds since the Unix epoch. Accepts ISO 8601, RFC
+/// 2822, unix timestamps, and relative spellings like "2 weeks ago" (a documented subset of git's
+/// approxidate).
 ///
 /// # Errors
 ///
@@ -729,8 +713,8 @@ mod tests {
         assert!(parse_date(Some("not-a-real-date")).is_err());
     }
 
-    /// Every line `JJ_LOG_TEMPLATE` can print parses back to what it encodes:
-    /// a bare commit ID, or an ID followed by files, insertions, and deletions.
+    /// Every line `JJ_LOG_TEMPLATE` can print parses back to what it encodes: a bare commit ID, or
+    /// an ID followed by files, insertions, and deletions.
     #[hegel::test]
     fn jj_log_lines_round_trip(tc: hegel::TestCase) {
         let id = gix::ObjectId::Sha1(tc.draw(generators::arrays(generators::integers::<u8>())));
@@ -750,8 +734,8 @@ mod tests {
         assert_eq!(parse_jj_log_line(&line), Some((id, diff)));
     }
 
-    /// A line with a count field missing or extra is malformed, never a
-    /// shifted or truncated numstat.
+    /// A line with a count field missing or extra is malformed, never a shifted or truncated
+    /// numstat.
     #[hegel::test]
     fn jj_log_lines_reject_wrong_field_counts(tc: hegel::TestCase) {
         let id = gix::ObjectId::Sha1(tc.draw(generators::arrays(generators::integers::<u8>())));
@@ -764,15 +748,15 @@ mod tests {
         assert_eq!(parse_jj_log_line(&line), None);
     }
 
-    /// The workspace is the nearest directory holding `.jj`. When stopping at
-    /// git, a nearer `.git` (directory or file) means there is none, while a
-    /// directory holding both, as a colocated workspace does, is still jj.
-    // Each case creates up to 15 directories and files. 50 cases cover the
-    // 6 distinct marker sets per level while keeping the test under a second.
+    /// The workspace is the nearest directory holding `.jj`. When stopping at git, a nearer `.git`
+    /// (directory or file) means there is none, while a directory holding both, as a colocated
+    /// workspace does, is still jj.
+    // Each case creates up to 15 directories and files. 50 cases cover the 6 distinct marker sets
+    // per level while keeping the test under a second.
     #[hegel::test(test_cases = 50)]
     fn jj_workspace_is_the_nearest_jj_directory(tc: hegel::TestCase) {
-        // One marker set per nested directory, outermost first. Bit 0 adds a
-        // `.jj` directory, bit 1 a `.git`, and bit 2 makes that `.git` a file.
+        // One marker set per nested directory, outermost first. Bit 0 adds a `.jj` directory, bit 1
+        // a `.git`, and bit 2 makes that `.git` a file.
         let levels = tc.draw(
             generators::vecs(generators::integers::<u8>().max_value(7))
                 .min_size(1)
@@ -799,8 +783,8 @@ mod tests {
             dirs.push(dir.canonicalize().unwrap());
         }
 
-        // `Some` when one of our directories decides the answer; `None` when
-        // the search must continue above the temporary directory.
+        // `Some` when one of our directories decides the answer; `None` when the search must
+        // continue above the temporary directory.
         let mut decided = None;
         for (markers, dir) in levels.iter().zip(&dirs).rev() {
             if markers & 1 != 0 {
@@ -815,8 +799,7 @@ mod tests {
         let found = find_jj_workspace(&dir, stop_at_git);
         match decided {
             Some(expected) => assert_eq!(found, expected),
-            // The host's own directories may hold a workspace; it just must
-            // not be one of ours.
+            // The host's own directories may hold a workspace; it just must not be one of ours.
             None => assert!(
                 found.as_ref().is_none_or(|f| !f.starts_with(&dirs[0])),
                 "found {found:?}"

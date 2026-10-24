@@ -78,11 +78,10 @@ enum Emphasis {
 
 /// Lay out `header` above `cells` as a borderless table.
 ///
-/// Every column is as wide as its widest entry, adjacent columns are separated
-/// by two spaces, and the leading column is left-aligned while the numeric
-/// columns after it are right-aligned. Lines carry no leading or trailing
-/// padding and the result has no trailing newline, so a caller decides how the
-/// table is terminated.
+/// Every column is as wide as its widest entry, adjacent columns are separated by two spaces, and
+/// the leading column is left-aligned while the numeric columns after it are right-aligned. Lines
+/// carry no leading or trailing padding and the result has no trailing newline, so a caller decides
+/// how the table is terminated.
 fn table(header: &[&str], cells: &[Vec<String>], emphasis: Emphasis) -> String {
     let widths = column_widths(header, cells);
     let last_row = cells.len().wrapping_sub(1);
@@ -118,8 +117,8 @@ fn push_row<'a>(
         if i > 0 {
             out.push_str("  ");
         }
-        // Measured rather than assumed, because a cell can exceed the column
-        // width only if it was not among the entries the widths were taken from.
+        // Measured rather than assumed, because a cell can exceed the column width only if it was
+        // not among the entries the widths were taken from.
         let padding = width.saturating_sub(cell.width());
         if i == 0 {
             push_cell(out, cell, bold);
@@ -186,8 +185,8 @@ mod tests {
         }
     }
 
-    /// The pool mixes ASCII with wide CJK and a combining accent, because column
-    /// widths are measured in terminal cells rather than bytes or `char`s.
+    /// The pool mixes ASCII with wide CJK and a combining accent, because column widths are
+    /// measured in terminal cells rather than bytes or `char`s.
     #[hegel::composite]
     fn stats_table(tc: &hegel::TestCase) -> StatsTable {
         const NAMES: [&str; 5] = ["Ada", "Ada Lovelace", "格蕾丝 <g@x>", "Jose\u{301}", ""];
@@ -209,8 +208,8 @@ mod tests {
         StatsTable { rows, total }
     }
 
-    /// Columns only line up if every line occupies the same number of terminal
-    /// cells, which is the whole job of the width measurement.
+    /// Columns only line up if every line occupies the same number of terminal cells, which is the
+    /// whole job of the width measurement.
     #[hegel::test]
     fn every_stats_line_is_equally_wide(tc: hegel::TestCase) {
         yansi::disable();
@@ -256,8 +255,8 @@ mod tests {
             rows: vec![stat("Ada", 1), stat("Grace Brewster Hopper", 1)],
             total: stat("Total", 2),
         });
-        // Every line's first column is padded to the widest author, so the
-        // second column starts at the same offset on all of them.
+        // Every line's first column is padded to the widest author, so the second column starts at
+        // the same offset on all of them.
         let width = "Grace Brewster Hopper".len();
         let labels = ["Author", "Ada", "Grace Brewster Hopper", "Total"];
         assert_eq!(out.lines().count(), labels.len(), "in:\n{out}");

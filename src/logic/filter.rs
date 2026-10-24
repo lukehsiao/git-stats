@@ -13,9 +13,9 @@ pub fn compile_authors(patterns: &[String]) -> Result<Vec<Regex>, regex::Error> 
 
 /// Indices of the commits to keep after author and date filtering.
 ///
-/// A commit is kept when it matches at least one author pattern (or there are
-/// none) and its committer time lies within `[since, until]` (each bound
-/// optional). Mirrors `git log --author/--since/--until`.
+/// A commit is kept when it matches at least one author pattern (or there are none) and its
+/// committer time lies within `[since, until]` (each bound optional). Mirrors `git log
+/// --author/--since/--until`.
 pub fn keep_indices<'a>(
     metas: impl IntoIterator<Item = &'a CommitMeta>,
     authors: &[Regex],
@@ -49,8 +49,8 @@ mod tests {
         let n = tc.draw(generators::integers::<usize>().max_value(100));
         let mut metas = Vec::with_capacity(n);
         for _ in 0..n {
-            // Multi-word names exercise filtering against idents that contain
-            // spaces; some still begin with "a" so the `^a` test keeps a mix.
+            // Multi-word names exercise filtering against idents that contain spaces; some still
+            // begin with "a" so the `^a` test keeps a mix.
             let name = tc.draw(generators::sampled_from(vec![
                 "ada lovelace",
                 "amy pond",

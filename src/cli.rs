@@ -21,8 +21,8 @@ pub struct Cli {
     /// Show the email address of each author.
     email: bool,
     #[arg(short, long)]
-    /// Show who reviewed/tested commits based on `Acked-by`, `Tested-by`, and
-    /// `Reviewed-by` git trailers.
+    /// Show who reviewed/tested commits based on `Acked-by`, `Tested-by`, and `Reviewed-by` git
+    /// trailers.
     reviews: bool,
     /// What column to sort the stats table by. Names sort by byte value, so uppercase comes before
     /// lowercase. The reviewers table always sorts by commits.
@@ -31,9 +31,11 @@ pub struct Cli {
     /// Reverse the sort order of the stats table: counts ascending, authors Z to A
     #[arg(long)]
     reverse: bool,
-    /// Limit the commits output to ones with author header lines that match the specified pattern (regular expression).
+    /// Limit the commits output to ones with author header lines that match the specified pattern
+    /// (regular expression).
     ///
-    /// With more than one --author=<pattern>, commits whose author matches any of the given patterns are chosen.
+    /// With more than one --author=<pattern>, commits whose author matches any of the given
+    /// patterns are chosen.
     #[arg(short, long)]
     author: Option<Vec<String>>,
     /// Limit the commits output to ones more recent than a specific date.

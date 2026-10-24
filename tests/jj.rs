@@ -1,6 +1,5 @@
-//! Integration tests against real, throwaway jj workspaces. They cover what
-//! the git tests cannot: workspace detection, revset evaluation through the
-//! `jj` CLI, and reading jj's git store.
+//! Integration tests against real, throwaway jj workspaces. They cover what the git tests cannot:
+//! workspace detection, revset evaluation through the `jj` CLI, and reading jj's git store.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,8 +17,8 @@ struct Fixture {
     _dir: tempfile::TempDir,
     config: PathBuf,
     ws: PathBuf,
-    // jj 0.38 and newer keep repo config under the user config directory,
-    // keyed by repo path, outside the temporary directory. `Drop` removes it.
+    // jj 0.38 and newer keep repo config under the user config directory, keyed by repo path,
+    // outside the temporary directory. `Drop` removes it.
     repo_config_dir: Option<PathBuf>,
 }
 
@@ -54,10 +53,9 @@ impl Fixture {
         fixture.jj(&args);
         let repo_config = PathBuf::from(fixture.jj(&["config", "path", "--repo"]));
         fixture.repo_config_dir = repo_config.parent().map(Path::to_path_buf);
-        // git-stats runs jj with the host's user config, which may lack an
-        // identity, name another one, or sign commits with the host's key.
-        // Repo config applies to those runs too, so their snapshots keep a
-        // fixed author and stay unsigned. Color is forced on to prove that
+        // git-stats runs jj with the host's user config, which may lack an identity, name another
+        // one, or sign commits with the host's key. Repo config applies to those runs too, so their
+        // snapshots keep a fixed author and stay unsigned. Color is forced on to prove that
         // git-stats turns it off.
         fixture.jj(&["config", "set", "--repo", "user.name", "Ada"]);
         fixture.jj(&["config", "set", "--repo", "user.email", "ada@example.com"]);
@@ -66,8 +64,7 @@ impl Fixture {
         fixture
     }
 
-    /// Run jj in the workspace with only the fixture's config, and return
-    /// its trimmed stdout.
+    /// Run jj in the workspace with only the fixture's config, and return its trimmed stdout.
     fn jj(&self, args: &[&str]) -> String {
         let out = Command::new("jj")
             .current_dir(&self.ws)
@@ -106,8 +103,8 @@ fn jj_available() -> bool {
     Command::new("jj").arg("--version").output().is_ok()
 }
 
-/// Two commits, then an edit left in the working-copy commit `@`. jj has not
-/// snapshotted the edit yet, so only git-stats' own `jj log` can pick it up.
+/// Two commits, then an edit left in the working-copy commit `@`. jj has not snapshotted the edit
+/// yet, so only git-stats' own `jj log` can pick it up.
 fn two_commits_and_a_pending_edit(f: &Fixture) {
     f.write("a.txt", "1\n2\n");
     f.jj(&["commit", "-m", "first"]);
@@ -128,9 +125,8 @@ fn default_revset_counts_the_working_copy_and_skips_root() {
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
     let r = report(&repo, &options(None));
 
-    // `::@` is first, second, and the snapshotted @, each adding one file's
-    // lines: +2, +1, +1. jj's virtual root commit has no git object, so
-    // reading it would fail the whole run.
+    // `::@` is first, second, and the snapshotted @, each adding one file's lines: +2, +1, +1. jj's
+    // virtual root commit has no git object, so reading it would fail the whole run.
     assert_eq!(counts(total(&r)), (3, 3, 4, 0, 4), "{r:#?}");
 }
 
@@ -195,14 +191,13 @@ fn non_colocated_workspace_applies_the_workspace_mailmap() {
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
     let r = report(&repo, &options(Some("@-")));
 
-    // jj's git store is bare and lives inside `.jj`, so the mailmap must come
-    // from the workspace rather than a git worktree.
+    // jj's git store is bare and lives inside `.jj`, so the mailmap must come from the workspace
+    // rather than a git worktree.
     assert!(has_author(&r, "Ada Lovelace"), "{r:#?}");
 }
 
-/// A non-colocated store has no index and an unborn `HEAD`, so attributes
-/// must come from the workspace's own `.gitattributes`, as git takes them from
-/// a worktree.
+/// A non-colocated store has no index and an unborn `HEAD`, so attributes must come from the
+/// workspace's own `.gitattributes`, as git takes them from a worktree.
 #[test]
 fn workspace_gitattributes_apply_without_a_git_worktree() {
     if !jj_available() {
@@ -219,8 +214,8 @@ fn workspace_gitattributes_apply_without_a_git_worktree() {
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
     let r = report(&repo, &options(Some("::@-")));
 
-    // `-diff` makes `a.bin` binary: each change counts as a file with no
-    // lines, so only the one `.gitattributes` line is an insertion.
+    // `-diff` makes `a.bin` binary: each change counts as a file with no lines, so only the one
+    // `.gitattributes` line is an insertion.
     assert_eq!(counts(total(&r)), (2, 3, 1, 0, 1), "{r:#?}");
 }
 
@@ -246,8 +241,8 @@ fn secondary_workspace_mailmap_wins_over_the_git_worktree() {
     let repo = Repo::open(&second, Vcs::Auto).unwrap();
     let r = report(&repo, &options(Some("::@")));
 
-    // Both files map the same email. The workspace being read decides, as
-    // the worktree does for git.
+    // Both files map the same email. The workspace being read decides, as the worktree does for
+    // git.
     assert!(has_author(&r, "Second Mapping"), "{r:#?}");
     assert!(!has_author(&r, "Main Mapping"), "{r:#?}");
 }
@@ -281,8 +276,8 @@ fn git_repository_nested_in_a_jj_workspace_stays_git() {
     assert!(has_author(&r, "Bob"), "{r:#?}");
 }
 
-/// A conflicted commit "right" rebased onto "left", and `@` on top of it
-/// resolving `a.txt` to two lines.
+/// A conflicted commit "right" rebased onto "left", and `@` on top of it resolving `a.txt` to two
+/// lines.
 fn conflict_fixture() -> Fixture {
     let f = Fixture::init(&["--no-colocate"]);
     f.write("a.txt", "1\n2\n3\n4\n5\n");
@@ -314,18 +309,16 @@ fn conflicted_commits_count_their_materialized_diff() {
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
     let r = report(&repo, &options(Some("conflicts()::@")));
 
-    // The conflicted commit replaces one line with conflict markers, and the
-    // resolution replaces the markers with two lines, so each touches only
-    // a.txt and the pair adds one line more than it removes, whatever the
-    // marker style. A git diff would also count the `.jjconflict-*` files
+    // The conflicted commit replaces one line with conflict markers, and the resolution replaces
+    // the markers with two lines, so each touches only a.txt and the pair adds one line more than
+    // it removes, whatever the marker style. A git diff would also count the `.jjconflict-*` files
     // that jj stores in a conflicted commit's tree.
     let t = total(&r);
     assert_eq!((t.commits, t.num_files, t.net), (2, 2, 1), "{r:#?}");
 }
 
-/// jj wraps log lines at `COLUMNS` when `ui.log-word-wrap` is set, even with
-/// stdout piped. A wrapped line would split a conflicted commit's counts from
-/// its ID.
+/// jj wraps log lines at `COLUMNS` when `ui.log-word-wrap` is set, even with stdout piped. A
+/// wrapped line would split a conflicted commit's counts from its ID.
 #[test]
 fn word_wrap_config_does_not_split_log_lines() {
     if !jj_available() {
@@ -381,8 +374,8 @@ fn forced_jj_outside_a_workspace_is_an_error() {
     );
 }
 
-/// `main` opens the repository at `.`, so the search for `.jj` must climb
-/// from the current directory, not only from an absolute path.
+/// `main` opens the repository at `.`, so the search for `.jj` must climb from the current
+/// directory, not only from an absolute path.
 #[test]
 fn binary_finds_the_workspace_from_a_subdirectory() {
     if !jj_available() {
@@ -412,8 +405,8 @@ fn binary_finds_the_workspace_from_a_subdirectory() {
     );
 }
 
-/// git sets `GIT_DIR` when it runs hooks. In a colocated workspace, a hook
-/// that runs `git stats` must then read git's `HEAD`, not jj's `::@`.
+/// git sets `GIT_DIR` when it runs hooks. In a colocated workspace, a hook that runs `git stats`
+/// must then read git's `HEAD`, not jj's `::@`.
 #[test]
 fn git_dir_in_a_colocated_workspace_selects_git() {
     if !jj_available() {

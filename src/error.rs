@@ -1,12 +1,12 @@
-//! The library's typed error. Callers can match on named variants; the binary
-//! (`main.rs`) wraps this in `anyhow`, following the convention that libraries
-//! use `thiserror` and only binaries reach for `anyhow`.
+//! The library's typed error. Callers can match on named variants; the binary (`main.rs`) wraps
+//! this in `anyhow`, following the convention that libraries use `thiserror` and only binaries
+//! reach for `anyhow`.
 
 use thiserror::Error;
 
-/// Boxed source error. gix surfaces a distinct concrete error type per
-/// operation, so boxing preserves the source chain without this enum having to
-/// enumerate (and track, across gix versions) every one of them.
+/// Boxed source error. gix surfaces a distinct concrete error type per operation, so boxing
+/// preserves the source chain without this enum having to enumerate (and track, across gix
+/// versions) every one of them.
 type Source = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 /// Result alias for the library's [`Error`].
@@ -23,15 +23,14 @@ pub enum Error {
     #[error("no jj workspace found at or above {path:?}")]
     NoJjWorkspace { path: std::path::PathBuf },
 
-    /// The `jj` binary could not be started, typically because it is not
-    /// installed.
+    /// The `jj` binary could not be started, typically because it is not installed.
     #[error(
         "could not run `jj`; is it installed and on PATH? (`--vcs git` reads the git repository instead)"
     )]
     SpawnJj(#[source] std::io::Error),
 
-    /// A `jj` command exited with an error. jj prints its own diagnostics to
-    /// stderr, so this carries only the command and its exit status.
+    /// A `jj` command exited with an error. jj prints its own diagnostics to stderr, so this
+    /// carries only the command and its exit status.
     #[error("`jj {command}` failed ({status})")]
     Jj {
         command: &'static str,
@@ -65,8 +64,8 @@ pub enum Error {
     #[error("could not read commit data")]
     ReadCommit(#[source] Source),
 
-    /// A specific commit object could not be decoded, typically because its
-    /// header is corrupt in a way git itself would never write.
+    /// A specific commit object could not be decoded, typically because its header is corrupt in a
+    /// way git itself would never write.
     #[error("could not decode commit {id}")]
     DecodeCommit {
         id: String,

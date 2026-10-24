@@ -14,12 +14,11 @@ use crate::repo::{self, Repo, WalkedCommit};
 ///
 /// # Errors
 ///
-/// Returns an error if the revision range cannot be resolved, a date or author
-/// pattern is invalid, or a commit's diff cannot be read.
+/// Returns an error if the revision range cannot be resolved, a date or author pattern is invalid,
+/// or a commit's diff cannot be read.
 pub fn run(repo: &Repo, opts: &Options) -> Result<Report> {
-    // PROCESS: validate the filters first. They are cheap to compile, and a
-    // typo'd pattern or date should error immediately, not after a walk that
-    // can take minutes on a large history.
+    // PROCESS: validate the filters first. They are cheap to compile, and a typo'd pattern or date
+    // should error immediately, not after a walk that can take minutes on a large history.
     let authors = filter::compile_authors(&opts.authors)?;
     let since = repo::parse_date(opts.since.as_deref())?;
     let until = repo::parse_date(opts.until.as_deref())?;
@@ -29,8 +28,8 @@ pub fn run(repo: &Repo, opts: &Options) -> Result<Report> {
 
     let stats = stats_table(repo, opts, &authors, since, until, &walked)?;
 
-    // Reviews intentionally use the full range, ignoring the author/date
-    // filters, to match the original tool's behavior.
+    // Reviews intentionally use the full range, ignoring the author/date filters, to match the
+    // original tool's behavior.
     let reviews = if opts.reviews {
         table::reviews_table(walked.iter().map(|w| &w.meta), opts.email)
     } else {
