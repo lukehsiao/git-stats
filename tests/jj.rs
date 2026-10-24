@@ -316,6 +316,30 @@ fn conflicted_commits_count_their_materialized_diff() {
     assert_eq!((t.commits, t.num_files, t.net), (2, 2, 1), "{r:#?}");
 }
 
+/// jj counts a conflicted merge against its auto-merged parents, so a merge that adds a file gets
+/// counts from jj. A merge adds nothing in git's numstat, so git-stats must drop them.
+#[test]
+fn conflicted_merges_add_nothing() {
+    if !jj_available() {
+        eprintln!("jj not available; skipping integration test");
+        return;
+    }
+    let f = Fixture::init(&["--no-colocate"]);
+    f.write("a.txt", "base\n");
+    f.jj(&["commit", "-m", "base"]);
+    f.write("a.txt", "left\n");
+    f.jj(&["commit", "-m", "left"]);
+    f.jj(&["new", "subject(\"base\")"]);
+    f.write("a.txt", "right\n");
+    f.jj(&["commit", "-m", "right"]);
+    f.jj(&["new", "subject(\"left\")", "subject(\"right\")"]);
+    f.write("b.txt", "b\n");
+    let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
+    let r = report(&repo, &options(Some("@ & conflicts()")));
+
+    assert_eq!(counts(total(&r)), (1, 0, 0, 0, 0), "{r:#?}");
+}
+
 /// jj wraps log lines at `COLUMNS` when `ui.log-word-wrap` is set, even with stdout piped. A
 /// wrapped line would split a conflicted commit's counts from its ID.
 #[test]
