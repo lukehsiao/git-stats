@@ -17,7 +17,7 @@ coverage *FLAGS:
 [group('dev')]
 check:
 	cargo clippy --all-targets --all-features --locked -- -W clippy::pedantic -D warnings
-	zizmor .
+	jactionlint
 
 # check security advisories
 [group('dev')]

@@ -13,6 +13,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       actions: write
       contents: write
@@ -30,14 +31,13 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: latest
-          cache: true
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
       - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: just,jaq,sd
-      - run: cargo install --path .
+      - run: cargo install --locked --path .
       - run: just install
       - name: Create Release Pull Request or Tag
         id: changesets
@@ -57,6 +57,7 @@ jobs:
     if: needs.release.outputs.published == 'true'
     name: Publish to crates.io
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: release
     permissions:
       contents: read
@@ -66,7 +67,7 @@ jobs:
         with:
           ref: v${{ fromJSON(needs.release.outputs.published-packages)[0].version }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
       - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
@@ -89,6 +90,7 @@ jobs:
     if: needs.release.outputs.published == 'true'
     name: AUR (${{ matrix.pkgname }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     strategy:
@@ -107,8 +109,12 @@ jobs:
           ssh-private-key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
 
       - name: Trust AUR host key and configure git
+        # This key has the fingerprint
+        # SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4, which
+        # https://aur.archlinux.org publishes. Pinning it stops a host on the
+        # network path from posing as the AUR.
         run: |
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' >> ~/.ssh/known_hosts
           git config --global user.name  'Luke Hsiao'
           git config --global user.email 'luke@hsiao.dev'
 
@@ -149,7 +155,7 @@ jobs:
         run: |
           # makepkg only runs on Arch and refuses root, so use a one-shot container
           # with a build user.
-          docker run --rm -v "$PWD:/pkg" -w /pkg archlinux:base-devel bash -c '
+          docker run --rm -v "$PWD:/pkg" -w /pkg archlinux:base-devel@sha256:3cbf69d2d5958d6a294f3722c5668e6187c4df8e00fa27f72352f0bf83e495e1 bash -c '
             useradd -m b && chown -R b:b /pkg &&
             su b -c "makepkg --printsrcinfo"
           ' > .SRCINFO

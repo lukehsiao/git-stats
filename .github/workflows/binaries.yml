@@ -14,13 +14,25 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
+permissions: {}
+
+# A called workflow sees the caller's name in "github.workflow". A group
+# built from it would equal the group of release.yml and deadlock, so the
+# group uses a fixed prefix. A newer run waits instead of cancelling an
+# upload that is in progress.
+concurrency:
+  group: binaries-${{ inputs.tag }}
+  cancel-in-progress: false
 
 jobs:
   build:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
+    # A build takes about 3 minutes. The limit leaves room for a slow
+    # cross or Windows build.
+    timeout-minutes: 20
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -72,7 +84,7 @@ jobs:
           ref: ${{ inputs.tag }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
