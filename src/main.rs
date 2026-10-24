@@ -10,14 +10,13 @@ fn main() -> Result<()> {
     enable_color_when_appropriate();
 
     let cli = Cli::parse();
-    let repo = Repo::open(".", cli.vcs())?;
-    let opts = cli.into_options();
+    let repo = Repo::open(".", cli.vcs)?;
     if repo.is_shallow() {
         eprintln!(
             "warning: this is a shallow clone; commits beyond the shallow boundary are not counted"
         );
     }
-    let report = app::run(&repo, &opts, &gix::date::Zoned::now())?;
+    let report = app::run(&repo, &cli, &gix::date::Zoned::now())?;
     write_report(&render::report(&report))
 }
 

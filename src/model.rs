@@ -1,10 +1,6 @@
 //! Value objects: plain data passed between the pure logic and the gix infrastructure. Nothing here
 //! performs I/O or depends on gix.
 
-use clap::ValueEnum;
-
-use crate::logic::table::Column;
-
 /// A person credited in a table: a commit's Author, resolved through `.mailmap` to match git's
 /// `%aN`/`%aE`, or a Reviewer named in a trailer.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -57,36 +53,6 @@ pub struct DiffStat {
     pub insertions: u64,
     pub deletions: u64,
     pub files: u64,
-}
-
-/// Which version control system reads the repository and interprets the revision range.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-pub enum Vcs {
-    /// Use jj in a jj workspace (colocated or not), git otherwise
-    Auto,
-    /// Read the git repository and take a git revision range
-    Git,
-    /// Read the jj workspace and take a jj revset
-    Jj,
-}
-
-/// Parsed, validated options handed from the CLI down to the application layer.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Options {
-    /// Revision range, interpreted by the infrastructure: git revision syntax (e.g. `origin..HEAD`)
-    /// or, in a jj workspace, a revset. `None` selects the backend's default.
-    pub range: Option<String>,
-    /// Group and display authors as `Name <email>` rather than just `Name`.
-    pub email: bool,
-    /// Also produce the reviewer/tester table from git trailers.
-    pub reviews: bool,
-    pub sort: Column,
-    pub reverse: bool,
-    /// Author regex patterns; a commit matches if any pattern matches. Empty means no author
-    /// filtering.
-    pub authors: Vec<String>,
-    pub since: Option<String>,
-    pub until: Option<String>,
 }
 
 #[cfg(test)]

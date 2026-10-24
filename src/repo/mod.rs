@@ -13,15 +13,27 @@ mod jj;
 
 use std::path::{Path, PathBuf};
 
+use clap::ValueEnum;
 use rayon::prelude::*;
 
 use crate::error::{Error, Result};
-use crate::model::{CommitMeta, Contributor, DiffStat, Vcs};
+use crate::model::{CommitMeta, Contributor, DiffStat};
 
 /// The object cache each thread-local repository gets, so the trees and blobs a commit's walk and
 /// diff read repeatedly come from memory instead of the pack. 8 MiB comfortably holds a commit's
 /// trees.
 const OBJECT_CACHE_BYTES: usize = 8 * 1024 * 1024;
+
+/// Which version control system reads the repository and interprets the revision range.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum Vcs {
+    /// Use jj in a jj workspace (colocated or not), git otherwise
+    Auto,
+    /// Read the git repository and take a git revision range
+    Git,
+    /// Read the jj workspace and take a jj revset
+    Jj,
+}
 
 /// What [`Repo::read`] finds in a Revision range.
 #[derive(Debug)]
@@ -202,8 +214,7 @@ fn jj_workspace_to_read(path: &Path, vcs: Vcs, git_dir_set: bool) -> Result<Opti
 
 #[cfg(test)]
 mod tests {
-    use super::jj_workspace_to_read;
-    use crate::model::Vcs;
+    use super::{Vcs, jj_workspace_to_read};
 
     /// Every `--vcs` choice, with and without `GIT_DIR`, from a colocated workspace and from a git
     /// repository nested in it. `GIT_DIR` steers only `auto`, and forced jj ignores the nearer git

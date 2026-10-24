@@ -6,8 +6,8 @@ use std::process::Command;
 
 mod common;
 
-use git_stats::model::{CommitMeta, DiffStat, Vcs};
-use git_stats::repo::Repo;
+use git_stats::model::{CommitMeta, DiffStat};
+use git_stats::repo::{Repo, Vcs};
 
 use common::{git, read, sum};
 

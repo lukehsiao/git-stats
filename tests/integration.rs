@@ -6,11 +6,10 @@ use std::fmt::Write as _;
 use std::io::{Read as _, Write as _};
 use std::process::{Command, Stdio};
 
-use git_stats::model::Vcs;
-use git_stats::repo::Repo;
+use git_stats::repo::{Repo, Vcs};
 
 mod common;
-use common::{git, git_available, options, read, report, reviewer, run, sum};
+use common::{git, git_available, read, report, reviewer, run, sum};
 
 /// `git stats | head` style usage closes stdout before the report is fully written. Rust ignores
 /// SIGPIPE, so a plain `print!` panics on the resulting EPIPE; the binary must instead die quietly
@@ -184,10 +183,7 @@ fn reviewers_match_git_shortlog_by_trailer() {
     want.sort();
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    let mut opts = options(Some("HEAD"));
-    opts.email = true;
-    opts.reviews = true;
-    let r = report(&repo, &opts);
+    let r = report(&repo, &["--email", "--reviews", "HEAD"]);
     let mut got: Vec<(u64, String)> = r
         .reviews
         .iter()
@@ -291,7 +287,7 @@ fn decode_failures_name_the_offending_commit() {
     git(p, &["commit-graph", "write", "--reachable"]);
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    let err = run(&repo, &options(Some("HEAD"))).unwrap_err();
+    let err = run(&repo, &["HEAD"]).unwrap_err();
     assert!(
         err.to_string().contains(&bad),
         "error should name the undecodable commit {bad}: {err}"

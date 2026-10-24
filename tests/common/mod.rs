@@ -12,25 +12,13 @@ use gix::ObjectId;
 use gix::objs::tree::EntryKind;
 use tempfile::TempDir;
 
+use clap::Parser as _;
 use git_stats::app;
+use git_stats::cli::Cli;
 use git_stats::error::Result;
-use git_stats::logic::table::{AuthorRow, Column, Counts, Report, Review};
-use git_stats::model::{CommitMeta, DiffStat, Options, Vcs};
-use git_stats::repo::Repo;
-
-/// Default options over `range`, as the CLI gives them without flags.
-pub fn options(range: Option<&str>) -> Options {
-    Options {
-        range: range.map(str::to_string),
-        email: false,
-        reviews: false,
-        sort: Column::Commits,
-        reverse: false,
-        authors: Vec::new(),
-        since: None,
-        until: None,
-    }
-}
+use git_stats::logic::table::{AuthorRow, Counts, Report, Review};
+use git_stats::model::{CommitMeta, DiffStat};
+use git_stats::repo::{Repo, Vcs};
 
 /// An arbitrary but fixed `now` for relative dates. Its odd offset makes a test that depends on the
 /// time zone by accident stand out.
@@ -38,13 +26,14 @@ fn now() -> gix::date::Zoned {
     "2001-02-03T04:05:06+05:45[+05:45]".parse().unwrap()
 }
 
-/// Run the application as of [`now`].
-pub fn run(repo: &Repo, opts: &Options) -> Result<Report> {
-    app::run(repo, opts, &now())
+/// Run the application on the command line `git-stats <args>`, as of [`now`].
+pub fn run(repo: &Repo, args: &[&str]) -> Result<Report> {
+    let command_line = std::iter::once("git-stats").chain(args.iter().copied());
+    app::run(repo, &Cli::try_parse_from(command_line).unwrap(), &now())
 }
 
-pub fn report(repo: &Repo, opts: &Options) -> Report {
-    run(repo, opts).unwrap()
+pub fn report(repo: &Repo, args: &[&str]) -> Report {
+    run(repo, args).unwrap()
 }
 
 /// Every commit in `range`, all kept, each with its numstat.

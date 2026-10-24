@@ -4,11 +4,10 @@
 mod common;
 
 use git_stats::logic::table::Counts;
-use git_stats::model::Options;
 use git_stats::repo::Repo;
 use tempfile::TempDir;
 
-use common::{Commit, RepoBuilder, author, has_author, options, report, reviewer, run, total};
+use common::{Commit, RepoBuilder, author, has_author, report, reviewer, run, total};
 
 /// One commit per `(name, email, time)`, each on top of the last.
 fn linear(authors: &[(&str, &str, i64)]) -> (TempDir, Repo) {
@@ -66,7 +65,7 @@ fn reviewed_repo() -> (TempDir, Repo) {
 #[test]
 fn sums_per_author_insertions_deletions_and_net() {
     let (_dir, repo) = two_author_repo();
-    let r = report(&repo, &options(None));
+    let r = report(&repo, &[]);
     let ada = author(&r, "Ada Lovelace").counts;
     let ada_counts = Counts {
         commits: 2,
@@ -88,7 +87,7 @@ fn sums_per_author_insertions_deletions_and_net() {
 #[test]
 fn totals_cover_all_authors() {
     let (_dir, repo) = two_author_repo();
-    let r = report(&repo, &options(None));
+    let r = report(&repo, &[]);
     let want = Counts {
         commits: 3,
         files: 4,
@@ -105,10 +104,7 @@ fn since_filters_out_older_commits() {
         ("Olda", "olda@x", 1_577_836_800),
         ("Newman", "newman@x", 1_704_067_200),
     ]);
-    let mut opts = options(None);
-    opts.since = Some("2022-01-01".to_string());
-
-    let r = report(&repo, &opts);
+    let r = report(&repo, &["--since", "2022-01-01"]);
     assert!(
         has_author(&r, "Newman"),
         "newer commit should remain: {r:#?}"
@@ -120,12 +116,21 @@ fn since_filters_out_older_commits() {
 }
 
 #[test]
+fn until_filters_out_newer_commits() {
+    // Times are unix seconds for 2020-01-01 and 2024-01-01.
+    let (_dir, repo) = linear(&[
+        ("Olda", "olda@x", 1_577_836_800),
+        ("Newman", "newman@x", 1_704_067_200),
+    ]);
+    let r = report(&repo, &["--until", "2022-01-01"]);
+    assert!(has_author(&r, "Olda"), "{r:#?}");
+    assert!(!has_author(&r, "Newman"), "{r:#?}");
+}
+
+#[test]
 fn author_filter_keeps_only_matching_authors() {
     let (_dir, repo) = linear(&[("Alice", "alice@x", 100), ("Bob", "bob@x", 200)]);
-    let mut opts = options(None);
-    opts.authors = vec!["Alice".to_string()];
-
-    let r = report(&repo, &opts);
+    let r = report(&repo, &["--author", "Alice"]);
     assert!(
         has_author(&r, "Alice"),
         "matching author should remain: {r:#?}"
@@ -139,12 +144,9 @@ fn author_filter_keeps_only_matching_authors() {
 #[test]
 fn filter_validation_precedes_the_walk() {
     let (_dir, repo) = linear(&[("Ada", "ada@x", 100)]);
-    let mut opts = options(Some("no-such-ref..HEAD"));
-    opts.since = Some("not-a-date".to_string());
-
     // Both the range and the date are bad. The date must win: filters are cheap to validate and
     // should error before a potentially expensive walk of the whole range even starts.
-    let err = run(&repo, &opts).unwrap_err();
+    let err = run(&repo, &["--since", "not-a-date", "no-such-ref..HEAD"]).unwrap_err();
     assert!(
         matches!(err, git_stats::Error::InvalidDate { .. }),
         "expected InvalidDate before any range resolution, got: {err:?}"
@@ -156,7 +158,7 @@ fn email_flag_splits_same_name_distinct_emails() {
     let (_dir, repo) = linear(&[("Luke", "luke@a", 100), ("Luke", "luke@b", 200)]);
 
     // Without --email, the two identities collapse into one "Luke" row.
-    let merged = report(&repo, &options(None));
+    let merged = report(&repo, &[]);
     assert_eq!(
         merged.stats.as_ref().unwrap().rows().len(),
         1,
@@ -165,9 +167,7 @@ fn email_flag_splits_same_name_distinct_emails() {
     assert_eq!(author(&merged, "Luke").counts.commits, 2, "{merged:#?}");
 
     // With --email, they become two rows keyed by `Name <email>`.
-    let mut with_email = options(None);
-    with_email.email = true;
-    let split = report(&repo, &with_email);
+    let split = report(&repo, &["--email"]);
     assert_eq!(
         author(&split, "Luke <luke@a>").counts.commits,
         1,
@@ -183,12 +183,16 @@ fn email_flag_splits_same_name_distinct_emails() {
 #[test]
 fn reviews_ignore_the_author_and_date_filters() {
     let (_dir, repo) = reviewed_repo();
-    let mut opts = options(None);
-    opts.reviews = true;
-    opts.authors = vec!["matches-nobody".to_string()];
-    opts.since = Some("2022-01-01".to_string());
-
-    let r = report(&repo, &opts);
+    let r = report(
+        &repo,
+        &[
+            "--reviews",
+            "--author",
+            "matches-nobody",
+            "--since",
+            "2022-01-01",
+        ],
+    );
 
     assert_eq!(r.stats, None, "{r:#?}");
     assert_eq!(reviewer(&r, "Rev Iewer").commits, 1, "{r:#?}");
@@ -198,27 +202,35 @@ fn reviews_ignore_the_author_and_date_filters() {
 fn reviews_are_left_out_unless_requested() {
     let (_dir, repo) = reviewed_repo();
 
-    let r = report(&repo, &options(None));
+    let r = report(&repo, &[]);
 
     assert!(r.reviews.is_empty(), "{r:#?}");
 }
 
 #[test]
-fn reverse_flips_sort_order() {
-    let (_dir, repo) = linear(&[
-        ("Ada", "ada@x", 100),
-        ("Ada", "ada@x", 200),
-        ("Bob", "bob@x", 300),
-    ]);
-    let names = |opts: &Options| -> Vec<String> {
-        let stats = report(&repo, opts).stats.unwrap();
+fn sort_and_reverse_order_the_rows() {
+    // Only the default `--sort commits` puts Zed first: Bob leads every other column, by count or
+    // by name.
+    let mut b = RepoBuilder::new();
+    let zed = |c: Commit| c.author("Zed", "zed@x");
+    let z1 = b.commit(zed(Commit::default()).file("a.txt", "1\n"));
+    let z2 = b.commit(zed(Commit::default()).parent(z1).file("a.txt", "1\n2\n"));
+    b.commit(
+        Commit::default()
+            .author("Bob", "bob@x")
+            .parent(z2)
+            .file("a.txt", "1\n2\n3\n")
+            .file("b.txt", "b\n")
+            .file("c.txt", "c\n"),
+    );
+    let (_dir, repo) = b.open();
+    let names = |args: &[&str]| -> Vec<String> {
+        let stats = report(&repo, args).stats.unwrap();
         stats.rows().iter().map(|s| s.key.clone()).collect()
     };
 
-    // Descending by commits: Ada (2) precedes Bob (1).
-    assert_eq!(names(&options(None)), ["Ada", "Bob"]);
-
-    let mut reversed = options(None);
-    reversed.reverse = true;
-    assert_eq!(names(&reversed), ["Bob", "Ada"]);
+    assert_eq!(names(&[]), ["Zed", "Bob"]);
+    assert_eq!(names(&["--reverse"]), ["Bob", "Zed"]);
+    assert_eq!(names(&["--sort", "author"]), ["Bob", "Zed"]);
+    assert_eq!(names(&["--sort", "author", "--reverse"]), ["Zed", "Bob"]);
 }
