@@ -408,6 +408,20 @@ fn conflicted_merges_add_nothing() {
     assert_eq!(sum(&commits), (1, DiffStat::default()), "{commits:#?}");
 }
 
+/// The numstat of `source`'s `@-` when it is the boundary of a depth-2 clone, which reads it as a
+/// shallow boundary commit.
+fn shallow_boundary_numstat(source: &Fixture) -> (usize, DiffStat) {
+    source.jj(&["bookmark", "create", "kid", "-r", "@"]);
+    source.jj(&["git", "export"]);
+    let f = Fixture::shallow_clone(source, "kid", "2");
+    let boundary = f.jj(&["log", "--no-graph", "-r", "kid-", "-T", "commit_id"]);
+    let shallow = std::fs::read_to_string(f.ws.join(".git/shallow")).unwrap();
+    assert_eq!(shallow.trim(), boundary, "kid- is the boundary");
+
+    let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
+    sum(&read(&repo, Some("kid-")))
+}
+
 /// A clone that is shallow from jj's conflicted commit makes that commit a shallow boundary commit.
 /// jj diffs a boundary commit against its virtual root commit, so jj's numstat is the whole-tree
 /// diff the boundary rule asks for, and only jj materializes the conflict. A git diff against the
@@ -418,22 +432,35 @@ fn conflicted_shallow_boundary_counts_its_materialized_tree() {
         eprintln!("jj or git not available; skipping integration test");
         return;
     }
-    let source = conflict_fixture();
-    source.jj(&["bookmark", "create", "kid", "-r", "@"]);
-    source.jj(&["git", "export"]);
-    let f = Fixture::shallow_clone(&source, "kid", "2");
-    let boundary = f.jj(&["log", "--no-graph", "-r", "kid-", "-T", "commit_id"]);
-    let shallow = std::fs::read_to_string(f.ws.join(".git/shallow")).unwrap();
-    assert_eq!(
-        shallow.trim(),
-        boundary,
-        "the conflicted commit is the boundary"
-    );
-
-    let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let (n, diff) = sum(&read(&repo, Some("kid-")));
+    let (n, diff) = shallow_boundary_numstat(&conflict_fixture());
 
     // Against `root()`, the materialized tree is `a.txt` alone, all of it added.
+    assert_eq!((n, diff.files, diff.deletions), (1, 1, 0), "{diff:?}");
+}
+
+/// At the boundary, jj gives a merge `root()` as its only parent, so it is no longer a merge to jj
+/// either. A conflicted merge there must still take jj's numstat, not count the
+/// `.jjconflict-*` files.
+#[test]
+fn conflicted_shallow_boundary_merge_counts_its_materialized_tree() {
+    if !jj_available() || !common::git_available() {
+        eprintln!("jj or git not available; skipping integration test");
+        return;
+    }
+    let source = Fixture::init(&["--no-colocate"]);
+    source.write("a.txt", "base\n");
+    source.jj(&["commit", "-m", "base"]);
+    source.write("a.txt", "left\n");
+    source.jj(&["commit", "-m", "left"]);
+    source.jj(&["new", "subject(\"base\")"]);
+    source.write("a.txt", "right\n");
+    source.jj(&["commit", "-m", "right"]);
+    source.jj(&["new", "subject(\"left\")", "subject(\"right\")"]);
+    source.jj(&["new"]);
+    source.write("a.txt", "resolved\n");
+    let (n, diff) = shallow_boundary_numstat(&source);
+
+    // Against `root()`, the conflicted merge's materialized tree is `a.txt` alone.
     assert_eq!((n, diff.files, diff.deletions), (1, 1, 0), "{diff:?}");
 }
 

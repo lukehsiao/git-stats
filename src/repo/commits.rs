@@ -12,10 +12,8 @@ pub(super) fn read<'r>(
     need_reviewers: bool,
 ) -> impl Iterator<Item = Result<WalkedCommit>> + 'r {
     let mailmap = repo.open_mailmap();
-    // git grafts commits at the shallow boundary as parentless: one whose header names several
-    // parents is not a merge there, and it diffs against the empty tree. An unreadable shallow file
-    // degrades to "not shallow", so a boundary commit then surfaces its missing parent as a read
-    // error when its numstat is computed.
+    // An unreadable shallow file degrades to "not shallow", so a boundary commit then surfaces its
+    // missing parent as a read error when its numstat is computed.
     let shallow = repo.shallow_commits().ok().flatten();
     commits.map(move |item| {
         let (id, known) = item?;
@@ -31,15 +29,15 @@ pub(super) fn read<'r>(
         let is_boundary = shallow
             .as_ref()
             .is_some_and(|s| s.binary_search(&id).is_ok());
-        // A merge adds nothing, as `git log --numstat` reports it. jj counts a merge against its
-        // auto-merged parents, which git never does, so a grafted merge at the shallow boundary
-        // diffs its whole tree like any other boundary commit. A numstat from jj wins over the
-        // boundary rule: jj diffs a boundary commit against its virtual root commit, which is the
+        // A merge adds nothing, as `git log --numstat` reports it. At the shallow boundary, git
+        // grafts a merge as parentless, and jj gives it its virtual root commit as its only parent.
+        // So neither sees a merge there, and it diffs its whole tree like any other boundary
+        // commit. A numstat from jj wins over that rule: jj diffs against the root, which is the
         // same whole-tree diff, and only jj sees past a conflict's `.jjconflict-*` trees.
         let is_merge = commit.parents.len() > 1;
         let numstat = if is_merge && !is_boundary {
             Numstat::Known(DiffStat::default())
-        } else if let Some(diff) = known.filter(|_| !is_merge) {
+        } else if let Some(diff) = known {
             Numstat::Known(diff)
         } else {
             let base = if is_boundary {
