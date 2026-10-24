@@ -1,17 +1,68 @@
 use std::collections::HashMap;
 
-use crate::model::{CommitMeta, Contributor, DiffStat, SortBy};
+use clap::ValueEnum;
 
-/// One row of the stats table: an Author's sums, or the Total row's.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Stat {
-    /// The Author's Contributor key, or `Total` for the Total row.
-    pub key: String,
+use crate::model::{CommitMeta, Contributor, DiffStat};
+
+/// A column of the stats table, in display order, and what `--sort` names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum Column {
+    /// Sort by author name, A to Z
+    Author,
+    /// Sort by number of commits
+    Commits,
+    /// Sort by number of files touched
+    Files,
+    /// Sort by number of insertions
+    Insertions,
+    /// Sort by number of deletions
+    Deletions,
+    /// Sort by net lines of change
+    Net,
+}
+
+impl Column {
+    /// Every column, in display order.
+    #[must_use]
+    pub fn all() -> &'static [Self] {
+        Self::value_variants()
+    }
+}
+
+/// The sums in one row of the stats table: an Author's, or the Total row's. Sums saturate rather
+/// than overflow.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Counts {
     pub commits: u64,
-    pub num_files: u64,
+    pub files: u64,
     pub insertions: u64,
     pub deletions: u64,
-    pub net: i64,
+}
+
+impl Counts {
+    /// The net line delta, insertions minus deletions. Each side is clamped to `i64::MAX` first,
+    /// so the difference cannot overflow.
+    #[must_use]
+    pub fn net(&self) -> i64 {
+        let ins = i64::try_from(self.insertions).unwrap_or(i64::MAX);
+        let del = i64::try_from(self.deletions).unwrap_or(i64::MAX);
+        ins - del
+    }
+
+    fn add(&mut self, diff: DiffStat) {
+        self.commits = self.commits.saturating_add(1);
+        self.files = self.files.saturating_add(diff.files);
+        self.insertions = self.insertions.saturating_add(diff.insertions);
+        self.deletions = self.deletions.saturating_add(diff.deletions);
+    }
+}
+
+/// One Author's row of the stats table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthorRow {
+    /// The Author's Contributor key.
+    pub key: String,
+    pub counts: Counts,
 }
 
 /// One row of the reviews table: a Reviewer's Contributor key and the commits they reviewed.
@@ -21,12 +72,26 @@ pub struct Review {
     pub commits: u64,
 }
 
-/// The stats table: one row per Author in display order, and the Total row kept apart so that no
-/// Author row can be mistaken for it.
+/// The stats table: one row per Author, in display order, and the Total row, which sums them. Only
+/// [`stats_table`] builds one, so those invariants always hold.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatsTable {
-    pub rows: Vec<Stat>,
-    pub total: Stat,
+    rows: Vec<AuthorRow>,
+    total: Counts,
+}
+
+impl StatsTable {
+    /// The Author rows, in display order. Each has a distinct Contributor key.
+    #[must_use]
+    pub fn rows(&self) -> &[AuthorRow] {
+        &self.rows
+    }
+
+    /// The Total row: the sums over every Author row.
+    #[must_use]
+    pub fn total(&self) -> Counts {
+        self.total
+    }
 }
 
 /// Everything a run shows: the stats table, absent when no commit survives the filters, and the
@@ -38,51 +103,42 @@ pub struct Report {
 }
 
 /// Build the stats table from each commit's metadata and numstat: one row per Author, keyed by
-/// [`Contributor::key`](crate::model::Contributor::key) with `email`, sorted by `sort`, plus the
-/// Total row. Returns `None` when there are no commits, since an empty table is not shown at all.
+/// [`Contributor::key`] with `email`, sorted by `sort`, plus the Total row. Returns `None` when
+/// there are no commits, since an empty table is not shown at all.
 ///
 /// Counts sort descending and keys A to Z, by byte value. With `reverse`, the column order is
 /// flipped. Ties sort by key, A to Z in both directions, so the order does not depend on which
-/// commit the walk saw first. Sums saturate rather than overflow.
+/// commit the walk saw first.
 #[must_use]
 pub fn stats_table(
     commits: &[(CommitMeta, DiffStat)],
     email: bool,
-    sort: SortBy,
+    sort: Column,
     reverse: bool,
 ) -> Option<StatsTable> {
-    let mut by_key: HashMap<String, Stat> = HashMap::new();
-    let mut total = empty_stat("Total".to_string());
-    for (meta, diff) in commits {
-        // The row's key stays empty until the map hands its own key over below, so no key is
-        // copied.
-        add(
-            by_key
-                .entry(meta.author.key(email))
-                .or_insert_with(|| empty_stat(String::new())),
-            *diff,
-        );
-        add(&mut total, *diff);
-    }
-    if total.commits == 0 {
+    if commits.is_empty() {
         return None;
     }
-    let mut rows: Vec<Stat> = by_key
-        .into_iter()
-        .map(|(key, s)| Stat { key, ..s })
-        .collect();
-    for s in rows.iter_mut().chain([&mut total]) {
-        s.net = net(s.insertions, s.deletions);
+    let mut by_key: HashMap<String, Counts> = HashMap::new();
+    let mut total = Counts::default();
+    for (meta, diff) in commits {
+        by_key.entry(meta.author.key(email)).or_default().add(*diff);
+        total.add(*diff);
     }
+    let mut rows: Vec<AuthorRow> = by_key
+        .into_iter()
+        .map(|(key, counts)| AuthorRow { key, counts })
+        .collect();
     // Every row has a distinct key, so the key tie-break makes the order total.
     rows.sort_unstable_by(|a, b| {
+        let (x, y) = (&a.counts, &b.counts);
         let column = match sort {
-            SortBy::Author => a.key.cmp(&b.key),
-            SortBy::Commits => b.commits.cmp(&a.commits),
-            SortBy::Files => b.num_files.cmp(&a.num_files),
-            SortBy::Insertions => b.insertions.cmp(&a.insertions),
-            SortBy::Deletions => b.deletions.cmp(&a.deletions),
-            SortBy::Net => b.net.cmp(&a.net),
+            Column::Author => a.key.cmp(&b.key),
+            Column::Commits => y.commits.cmp(&x.commits),
+            Column::Files => y.files.cmp(&x.files),
+            Column::Insertions => y.insertions.cmp(&x.insertions),
+            Column::Deletions => y.deletions.cmp(&x.deletions),
+            Column::Net => y.net().cmp(&x.net()),
         };
         let column = if reverse { column.reverse() } else { column };
         column.then_with(|| a.key.cmp(&b.key))
@@ -117,31 +173,6 @@ pub fn reviews_table(reviewers: &[Vec<Contributor>], email: bool) -> Vec<Review>
     // Every row has a distinct key, so the key tie-break makes the order total.
     rows.sort_unstable_by(|a, b| b.commits.cmp(&a.commits).then_with(|| a.key.cmp(&b.key)));
     rows
-}
-
-fn empty_stat(key: String) -> Stat {
-    Stat {
-        key,
-        commits: 0,
-        num_files: 0,
-        insertions: 0,
-        deletions: 0,
-        net: 0,
-    }
-}
-
-fn add(s: &mut Stat, diff: DiffStat) {
-    s.commits = s.commits.saturating_add(1);
-    s.num_files = s.num_files.saturating_add(diff.files);
-    s.insertions = s.insertions.saturating_add(diff.insertions);
-    s.deletions = s.deletions.saturating_add(diff.deletions);
-}
-
-/// Net line delta, clamped so absurd inputs cannot overflow (panic-free).
-fn net(insertions: u64, deletions: u64) -> i64 {
-    let ins = i64::try_from(insertions).unwrap_or(i64::MAX);
-    let del = i64::try_from(deletions).unwrap_or(i64::MAX);
-    ins - del
 }
 
 #[cfg(test)]
@@ -197,15 +228,8 @@ mod tests {
         commits
     }
 
-    fn any_sort_by() -> impl Generator<SortBy> {
-        generators::sampled_from(vec![
-            SortBy::Author,
-            SortBy::Commits,
-            SortBy::Files,
-            SortBy::Insertions,
-            SortBy::Deletions,
-            SortBy::Net,
-        ])
+    fn any_column() -> impl Generator<Column> {
+        generators::sampled_from(Column::all().to_vec())
     }
 
     fn signed(n: u64) -> i64 {
@@ -214,7 +238,7 @@ mod tests {
 
     #[test]
     fn no_commits_build_no_table() {
-        assert_eq!(stats_table(&[], false, SortBy::Commits, false), None);
+        assert_eq!(stats_table(&[], false, Column::Commits, false), None);
     }
 
     /// Each row holds exactly the sums of the commits whose Author has its Contributor key, whatever
@@ -223,29 +247,20 @@ mod tests {
     fn rows_match_independent_per_author_sums(tc: hegel::TestCase) {
         let commits = tc.draw(commit_list().print_as_debug());
         let email = tc.draw(generators::booleans());
-        let by = tc.draw(any_sort_by().print_as_debug());
+        let by = tc.draw(any_column().print_as_debug());
         let reverse = tc.draw(generators::booleans());
-        let mut expected: BTreeMap<String, (u64, u64, u64, u64)> = BTreeMap::new();
+        let mut expected: BTreeMap<String, Counts> = BTreeMap::new();
         for (meta, diff) in &commits {
             let e = expected.entry(meta.author.key(email)).or_default();
-            e.0 += 1;
-            e.1 += diff.files;
-            e.2 += diff.insertions;
-            e.3 += diff.deletions;
+            e.commits += 1;
+            e.files += diff.files;
+            e.insertions += diff.insertions;
+            e.deletions += diff.deletions;
         }
-        let rows = stats_table(&commits, email, by, reverse)
-            .map(|t| t.rows)
-            .unwrap_or_default();
-        let actual: BTreeMap<String, (u64, u64, u64, u64)> = rows
-            .iter()
-            .map(|s| {
-                assert_eq!(s.net, signed(s.insertions) - signed(s.deletions), "{s:?}");
-                (
-                    s.key.clone(),
-                    (s.commits, s.num_files, s.insertions, s.deletions),
-                )
-            })
-            .collect();
+        let table = stats_table(&commits, email, by, reverse);
+        let rows = table.as_ref().map_or(&[][..], StatsTable::rows);
+        let actual: BTreeMap<String, Counts> =
+            rows.iter().map(|r| (r.key.clone(), r.counts)).collect();
         assert_eq!(rows.len(), actual.len(), "duplicate rows: {rows:?}");
         assert_eq!(actual, expected);
     }
@@ -253,30 +268,34 @@ mod tests {
     #[hegel::test]
     fn total_matches_independent_sums(tc: hegel::TestCase) {
         let commits = tc.draw(commit_list().print_as_debug());
-        let Some(table) = stats_table(&commits, false, SortBy::Commits, false) else {
+        let Some(table) = stats_table(&commits, false, Column::Commits, false) else {
             assert_eq!(commits, []);
             return;
         };
         let ins: u64 = commits.iter().map(|(_, d)| d.insertions).sum();
         let del: u64 = commits.iter().map(|(_, d)| d.deletions).sum();
-        let total = table.total;
-        assert_eq!(total.key, "Total");
-        assert_eq!(total.commits, u64::try_from(commits.len()).unwrap());
-        assert_eq!(total.num_files, commits.iter().map(|(_, d)| d.files).sum());
-        assert_eq!(total.insertions, ins);
-        assert_eq!(total.deletions, del);
-        assert_eq!(total.net, signed(ins) - signed(del));
+        let total = table.total();
+        let expected = Counts {
+            commits: u64::try_from(commits.len()).unwrap(),
+            files: commits.iter().map(|(_, d)| d.files).sum(),
+            insertions: ins,
+            deletions: del,
+        };
+        assert_eq!(total, expected);
+        assert_eq!(total.net(), signed(ins) - signed(del));
     }
 
-    /// How `a` compares to `b` in the column `by` names, ascending.
-    fn column(a: &Stat, b: &Stat, by: SortBy) -> Ordering {
+    /// How `a` compares to `b` in the column `by`, ascending.
+    fn column(a: &AuthorRow, b: &AuthorRow, by: Column) -> Ordering {
+        let (x, y) = (&a.counts, &b.counts);
         match by {
-            SortBy::Author => a.key.cmp(&b.key),
-            SortBy::Commits => a.commits.cmp(&b.commits),
-            SortBy::Files => a.num_files.cmp(&b.num_files),
-            SortBy::Insertions => a.insertions.cmp(&b.insertions),
-            SortBy::Deletions => a.deletions.cmp(&b.deletions),
-            SortBy::Net => a.net.cmp(&b.net),
+            Column::Author => a.key.cmp(&b.key),
+            Column::Commits => x.commits.cmp(&y.commits),
+            Column::Files => x.files.cmp(&y.files),
+            Column::Insertions => x.insertions.cmp(&y.insertions),
+            Column::Deletions => x.deletions.cmp(&y.deletions),
+            Column::Net => (signed(x.insertions) - signed(x.deletions))
+                .cmp(&(signed(y.insertions) - signed(y.deletions))),
         }
     }
 
@@ -286,12 +305,11 @@ mod tests {
     #[hegel::test]
     fn rows_follow_the_column_then_the_name(tc: hegel::TestCase) {
         let commits = tc.draw(commit_list().print_as_debug());
-        let by = tc.draw(any_sort_by().print_as_debug());
+        let by = tc.draw(any_column().print_as_debug());
         let reverse = tc.draw(generators::booleans());
-        let rows = stats_table(&commits, false, by, reverse)
-            .map(|t| t.rows)
-            .unwrap_or_default();
-        let ascending = (by == SortBy::Author) != reverse;
+        let table = stats_table(&commits, false, by, reverse);
+        let rows = table.as_ref().map_or(&[][..], StatsTable::rows);
+        let ascending = (by == Column::Author) != reverse;
         for w in rows.windows(2) {
             let (a, b) = (&w[0], &w[1]);
             let ord = column(a, b, by);
@@ -303,11 +321,12 @@ mod tests {
         }
     }
 
-    /// The saturating sums and the clamped `net` exist so that counts near `u64::MAX` cannot panic,
-    /// so the generator draws the full `u64` range.
+    /// Sums saturate and `net` clamps each side to `i64::MAX`, so counts near `u64::MAX` neither
+    /// panic nor wrap. The generator draws the full `u64` range, and the expected values are
+    /// computed in wider integers.
     #[hegel::test]
-    fn stats_table_never_panics_on_boundary_values(tc: hegel::TestCase) {
-        let n = tc.draw(generators::integers::<usize>().max_value(20));
+    fn boundary_values_saturate_and_clamp(tc: hegel::TestCase) {
+        let n = tc.draw(generators::integers::<usize>().min_value(1).max_value(20));
         let mut commits = Vec::with_capacity(n);
         for _ in 0..n {
             let diff = DiffStat {
@@ -317,7 +336,19 @@ mod tests {
             };
             commits.push((authored_by(who("boundary", "b@x")), diff));
         }
-        let _ = stats_table(&commits, false, SortBy::Net, false);
+        let table = stats_table(&commits, false, Column::Commits, false).unwrap();
+        let saturated = |side: fn(&DiffStat) -> u64| {
+            let sum: u128 = commits.iter().map(|(_, d)| u128::from(side(d))).sum();
+            u64::try_from(sum).unwrap_or(u64::MAX)
+        };
+        let clamped = |n: u64| i128::from(n).min(i128::from(i64::MAX));
+        let (ins, del) = (saturated(|d| d.insertions), saturated(|d| d.deletions));
+        let total = table.total();
+        assert_eq!((total.insertions, total.deletions), (ins, del));
+        assert_eq!(total.files, saturated(|d| d.files));
+        assert_eq!(i128::from(total.net()), clamped(ins) - clamped(del));
+        // One Author, so the one row carries the same sums.
+        assert_eq!(table.rows()[0].counts, total);
     }
 
     /// Each commit's Reviewers, drawn from a small pool, so ties in commit count are common, and a

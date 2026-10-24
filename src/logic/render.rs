@@ -3,7 +3,7 @@ use std::fmt::Write as _;
 use unicode_width::UnicodeWidthStr;
 use yansi::Paint;
 
-use crate::logic::table::{Report, Review, StatsTable};
+use crate::logic::table::{Column, Counts, Report, Review, StatsTable};
 
 /// Render the report as text: the stats table, then the reviews table after a blank line. A table
 /// with nothing to show is left out, along with its blank line, so the text never opens with one.
@@ -30,31 +30,39 @@ pub fn report(report: &Report) -> String {
 
 /// Render the per-author stats table, with the Total row last and in bold blue.
 fn render_stats(stats: &StatsTable) -> String {
-    const HEADER: [&str; 6] = [
-        "Author",
-        "Commits",
-        "Changed Files",
-        "Insertions",
-        "Deletions",
-        "Net Δ",
-    ];
-    let cells: Vec<Vec<String>> = stats
-        .rows
-        .iter()
-        .chain(std::iter::once(&stats.total))
-        .map(|r| {
-            vec![
-                r.key.clone(),
-                r.commits.to_string(),
-                r.num_files.to_string(),
-                display_add(r.insertions),
-                display_del(r.deletions),
-                display_net(r.net),
-            ]
-        })
-        .collect();
-    // The Total row is emphasized to separate it from the per-author rows above it.
-    table(&HEADER, &cells, Emphasis::HeaderAndLastRow)
+    let header: Vec<&str> = Column::all().iter().map(|&c| label(c)).collect();
+    let row = |key: &str, counts: Counts| -> Vec<String> {
+        Column::all()
+            .iter()
+            .map(|&c| cell(c, key, counts))
+            .collect()
+    };
+    let rows: Vec<Vec<String>> = stats.rows().iter().map(|r| row(&r.key, r.counts)).collect();
+    table(&header, &rows, Some(&row("Total", stats.total())))
+}
+
+/// The header of column `c` in the stats table.
+fn label(c: Column) -> &'static str {
+    match c {
+        Column::Author => "Author",
+        Column::Commits => "Commits",
+        Column::Files => "Changed Files",
+        Column::Insertions => "Insertions",
+        Column::Deletions => "Deletions",
+        Column::Net => "Net Δ",
+    }
+}
+
+/// The text of column `c` in the stats table row labelled `key`.
+fn cell(c: Column, key: &str, counts: Counts) -> String {
+    match c {
+        Column::Author => key.to_string(),
+        Column::Commits => counts.commits.to_string(),
+        Column::Files => counts.files.to_string(),
+        Column::Insertions => display_add(counts.insertions),
+        Column::Deletions => display_del(counts.deletions),
+        Column::Net => display_net(counts.net()),
+    }
 }
 
 /// Render the per-reviewer table. For consistency with the stats table, its header row is bold
@@ -65,39 +73,35 @@ fn render_reviews(rows: &[Review]) -> String {
         .iter()
         .map(|r| vec![r.key.clone(), r.commits.to_string()])
         .collect();
-    table(&HEADER, &cells, Emphasis::Header)
+    table(&HEADER, &cells, None)
 }
 
-/// Which rows are rendered in bold blue.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Emphasis {
-    Header,
-    HeaderAndLastRow,
-}
-
-/// Lay out `header` above `cells` as a borderless table.
+/// Lay out `header` above `rows`, and then the `total` row if there is one, as a borderless table.
+/// The header and the total row are bold blue.
 ///
 /// Every column is as wide as its widest entry, adjacent columns are separated by two spaces, and
 /// the leading column is left-aligned while the numeric columns after it are right-aligned. Lines
 /// carry no leading or trailing padding and the result has no trailing newline, so a caller decides
 /// how the table is terminated.
-fn table(header: &[&str], cells: &[Vec<String>], emphasis: Emphasis) -> String {
-    let widths = column_widths(header, cells);
-    let last_row = cells.len().wrapping_sub(1);
+fn table(header: &[&str], rows: &[Vec<String>], total: Option<&[String]>) -> String {
+    let body = rows
+        .iter()
+        .map(|r| (r.as_slice(), false))
+        .chain(total.map(|t| (t, true)));
+    let widths = column_widths(header, body.clone().map(|(row, _)| row));
     let mut out = String::new();
     push_row(&mut out, header.iter().copied(), &widths, true);
-    for (i, row) in cells.iter().enumerate() {
+    for (row, bold) in body {
         out.push('\n');
-        let bold = emphasis == Emphasis::HeaderAndLastRow && i == last_row;
         push_row(&mut out, row.iter().map(String::as_str), &widths, bold);
     }
     out
 }
 
 /// The display width of the widest entry in each column, headers included.
-fn column_widths(header: &[&str], cells: &[Vec<String>]) -> Vec<usize> {
+fn column_widths<'a>(header: &[&str], rows: impl Iterator<Item = &'a [String]>) -> Vec<usize> {
     let mut widths: Vec<usize> = header.iter().map(|h| h.width()).collect();
-    for row in cells {
+    for row in rows {
         for (width, cell) in widths.iter_mut().zip(row) {
             *width = (*width).max(cell.width());
         }
@@ -169,50 +173,77 @@ fn display_net(n: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Mutex, MutexGuard, PoisonError};
+
     use super::*;
-    use crate::logic::table::Stat;
+    use crate::logic::table::stats_table;
+    use crate::model::{CommitMeta, Contributor, DiffStat};
     use hegel::generators::{self, Generator};
 
-    fn stat(key: &str, net: i64) -> Stat {
-        Stat {
-            key: key.to_string(),
-            commits: 1,
-            num_files: 1,
-            insertions: 1,
-            deletions: 1,
-            net,
+    /// Turn yansi's styling on or off until the guard drops. The switch is global, and `cargo
+    /// test` runs tests on parallel threads, so each test holds this lock while it renders.
+    fn styling(on: bool) -> MutexGuard<'static, ()> {
+        static SWITCH: Mutex<()> = Mutex::new(());
+        let guard = SWITCH.lock().unwrap_or_else(PoisonError::into_inner);
+        if on {
+            yansi::enable();
+        } else {
+            yansi::disable();
+        }
+        guard
+    }
+
+    /// The stats table of one commit per `(author name, diff)`. The Authors have no email, so an
+    /// empty name gives an empty Author cell.
+    fn table_of(commits: &[(&str, DiffStat)]) -> Option<StatsTable> {
+        let commits: Vec<(CommitMeta, DiffStat)> = commits
+            .iter()
+            .map(|&(name, diff)| {
+                let author = Contributor {
+                    name: name.to_string(),
+                    email: String::new(),
+                };
+                let meta = CommitMeta {
+                    author,
+                    time_seconds: 0,
+                };
+                (meta, diff)
+            })
+            .collect();
+        stats_table(&commits, false, Column::Commits, false)
+    }
+
+    fn diff(files: u64, insertions: u64, deletions: u64) -> DiffStat {
+        DiffStat {
+            insertions,
+            deletions,
+            files,
         }
     }
 
     /// The pool mixes ASCII with wide CJK and a combining accent, because column widths are
     /// measured in terminal cells rather than bytes or `char`s.
     #[hegel::composite]
-    fn stats_table(tc: &hegel::TestCase) -> StatsTable {
+    fn any_stats_table(tc: &hegel::TestCase) -> StatsTable {
         const NAMES: [&str; 5] = ["Ada", "Ada Lovelace", "格蕾丝 <g@x>", "Jose\u{301}", ""];
-        let draw_stat = |key: &str| Stat {
-            key: key.to_string(),
-            commits: tc.draw(generators::integers::<u64>()),
-            num_files: tc.draw(generators::integers::<u64>()),
-            insertions: tc.draw(generators::integers::<u64>()),
-            deletions: tc.draw(generators::integers::<u64>()),
-            net: tc.draw(generators::integers::<i64>()),
-        };
-        let n = tc.draw(generators::integers::<usize>().max_value(20));
-        let mut rows = Vec::with_capacity(n);
+        let n = tc.draw(generators::integers::<usize>().min_value(1).max_value(20));
+        let mut commits = Vec::with_capacity(n);
         for _ in 0..n {
             let who = tc.draw(generators::integers::<usize>().max_value(NAMES.len() - 1));
-            rows.push(draw_stat(NAMES[who]));
+            let files = tc.draw(generators::integers::<u64>());
+            let insertions = tc.draw(generators::integers::<u64>());
+            let deletions = tc.draw(generators::integers::<u64>());
+            commits.push((NAMES[who], diff(files, insertions, deletions)));
         }
-        let total = draw_stat("Total");
-        StatsTable { rows, total }
+        table_of(&commits).unwrap()
     }
 
     /// Columns only line up if every line occupies the same number of terminal cells, which is the
     /// whole job of the width measurement.
     #[hegel::test]
     fn every_stats_line_is_equally_wide(tc: hegel::TestCase) {
-        yansi::disable();
-        let out = render_stats(&tc.draw(stats_table().print_as_debug()));
+        let _plain = styling(false);
+        let out = render_stats(&tc.draw(any_stats_table().print_as_debug()));
         let widths: Vec<usize> = out.lines().map(UnicodeWidthStr::width).collect();
         assert!(
             widths.windows(2).all(|w| w[0] == w[1]),
@@ -222,8 +253,8 @@ mod tests {
 
     #[hegel::test]
     fn stats_lines_never_end_in_whitespace(tc: hegel::TestCase) {
-        yansi::disable();
-        let out = render_stats(&tc.draw(stats_table().print_as_debug()));
+        let _plain = styling(false);
+        let out = render_stats(&tc.draw(any_stats_table().print_as_debug()));
         for line in out.lines() {
             assert_eq!(line.trim_end(), line, "trailing space in:\n{out}");
         }
@@ -231,29 +262,39 @@ mod tests {
 
     #[test]
     fn columns_are_two_spaces_apart_with_numbers_right_aligned() {
-        yansi::disable();
-        let out = render_stats(&StatsTable {
-            rows: vec![stat("Ada", -1)],
-            total: stat("Total", -1),
-        });
+        let _plain = styling(false);
+        let out =
+            render_stats(&table_of(&[("Ada", diff(3, 1, 2)), ("Bob", diff(1, 4, 0))]).unwrap());
         assert_eq!(
             out,
             concat!(
                 "Author  Commits  Changed Files  Insertions  Deletions  Net Δ\n",
-                "Ada           1              1          +1         -1     -1\n",
-                "Total         1              1          +1         -1     -1"
+                "Ada           1              3          +1         -2     -1\n",
+                "Bob           1              1          +4          0     +4\n",
+                "Total         2              4          +5         -2     +3"
             )
         );
+    }
+
+    /// The header and the Total row are bold, and no Author row is.
+    #[test]
+    fn only_the_header_and_total_rows_are_bold() {
+        let _styled = styling(true);
+        let out =
+            render_stats(&table_of(&[("Ada", diff(3, 1, 2)), ("Bob", diff(1, 4, 0))]).unwrap());
+        let bold: Vec<bool> = out.lines().map(|l| l.contains('\u{1b}')).collect();
+        assert_eq!(bold, [true, false, false, true], "{out:?}");
     }
 
     /// An author wider than its header widens the column for every other row.
     #[test]
     fn a_long_author_widens_the_first_column() {
-        yansi::disable();
-        let out = render_stats(&StatsTable {
-            rows: vec![stat("Ada", 1), stat("Grace Brewster Hopper", 1)],
-            total: stat("Total", 2),
-        });
+        let _plain = styling(false);
+        let table = table_of(&[
+            ("Ada", diff(1, 1, 0)),
+            ("Grace Brewster Hopper", diff(1, 1, 0)),
+        ]);
+        let out = render_stats(&table.unwrap());
         // Every line's first column is padded to the widest author, so the second column starts at
         // the same offset on all of them.
         let width = "Grace Brewster Hopper".len();
@@ -266,7 +307,7 @@ mod tests {
 
     #[test]
     fn reviews_render_two_columns() {
-        yansi::disable();
+        let _plain = styling(false);
         let rows = vec![Review {
             key: "Ada".to_string(),
             commits: 3,
@@ -282,9 +323,9 @@ mod tests {
     /// alone starts at the top.
     #[hegel::test]
     fn report_framing_is_stable(tc: hegel::TestCase) {
-        yansi::disable();
+        let _plain = styling(false);
         let stats = if tc.draw(generators::booleans()) {
-            Some(tc.draw(stats_table().print_as_debug()))
+            Some(tc.draw(any_stats_table().print_as_debug()))
         } else {
             None
         };

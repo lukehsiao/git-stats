@@ -3,6 +3,8 @@
 
 use clap::ValueEnum;
 
+use crate::logic::table::Column;
+
 /// A person credited in a table: a commit's Author, resolved through `.mailmap` to match git's
 /// `%aN`/`%aE`, or a Reviewer named in a trailer.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -57,23 +59,6 @@ pub struct DiffStat {
     pub files: u64,
 }
 
-/// Which column the stats table is sorted by.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-pub enum SortBy {
-    /// Sort by author name, A to Z
-    Author,
-    /// Sort by number of commits
-    Commits,
-    /// Sort by number of files touched
-    Files,
-    /// Sort by number of insertions
-    Insertions,
-    /// Sort by number of deletions
-    Deletions,
-    /// Sort by net lines of change
-    Net,
-}
-
 /// Which version control system reads the repository and interprets the revision range.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Vcs {
@@ -95,7 +80,7 @@ pub struct Options {
     pub email: bool,
     /// Also produce the reviewer/tester table from git trailers.
     pub reviews: bool,
-    pub sort: SortBy,
+    pub sort: Column,
     pub reverse: bool,
     /// Author regex patterns; a commit matches if any pattern matches. Empty means no author
     /// filtering.

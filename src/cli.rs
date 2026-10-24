@@ -1,6 +1,7 @@
 use clap::Parser;
 
-use crate::model::{Options, SortBy, Vcs};
+use crate::logic::table::Column;
+use crate::model::{Options, Vcs};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -26,8 +27,8 @@ pub struct Cli {
     reviews: bool,
     /// What column to sort the stats table by. Names sort by byte value, so uppercase comes before
     /// lowercase. The reviewers table always sorts by commits.
-    #[arg(short, long, value_enum, default_value_t = SortBy::Commits)]
-    sort: SortBy,
+    #[arg(short, long, value_enum, default_value_t = Column::Commits)]
+    sort: Column,
     /// Reverse the sort order of the stats table: counts ascending, authors Z to A
     #[arg(long)]
     reverse: bool,
@@ -78,7 +79,8 @@ impl Cli {
 #[cfg(test)]
 mod test {
     use super::Cli;
-    use crate::model::{Options, SortBy};
+    use crate::logic::table::Column;
+    use crate::model::Options;
     use clap::Parser;
 
     #[test]
@@ -110,7 +112,7 @@ mod test {
             range: Some("origin..HEAD".to_string()),
             email: true,
             reviews: true,
-            sort: SortBy::Net,
+            sort: Column::Net,
             reverse: true,
             authors: vec!["alice".to_string()],
             since: Some("2020-01-01".to_string()),
@@ -127,7 +129,7 @@ mod test {
             range: None,
             email: false,
             reviews: false,
-            sort: SortBy::Commits,
+            sort: Column::Commits,
             reverse: false,
             authors: Vec::new(),
             since: None,

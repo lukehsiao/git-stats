@@ -14,8 +14,8 @@ use tempfile::TempDir;
 
 use git_stats::app;
 use git_stats::error::Result;
-use git_stats::logic::table::{Report, Review, Stat};
-use git_stats::model::{CommitMeta, DiffStat, Options, SortBy, Vcs};
+use git_stats::logic::table::{AuthorRow, Column, Counts, Report, Review};
+use git_stats::model::{CommitMeta, DiffStat, Options, Vcs};
 use git_stats::repo::Repo;
 
 /// Default options over `range`, as the CLI gives them without flags.
@@ -24,7 +24,7 @@ pub fn options(range: Option<&str>) -> Options {
         range: range.map(str::to_string),
         email: false,
         reviews: false,
-        sort: SortBy::Commits,
+        sort: Column::Commits,
         reverse: false,
         authors: Vec::new(),
         since: None,
@@ -64,36 +64,31 @@ pub fn sum(commits: &[(CommitMeta, DiffStat)]) -> (usize, DiffStat) {
     (commits.len(), total)
 }
 
+/// The stats table's Author rows, or none without a stats table.
+fn rows(report: &Report) -> &[AuthorRow] {
+    report.stats.as_ref().map_or(&[], |t| t.rows())
+}
+
 /// The stats table row whose Contributor key is exactly `key`.
-pub fn author<'a>(report: &'a Report, key: &str) -> &'a Stat {
-    report
-        .stats
+pub fn author<'a>(report: &'a Report, key: &str) -> &'a AuthorRow {
+    rows(report)
         .iter()
-        .flat_map(|t| &t.rows)
-        .find(|s| s.key == key)
+        .find(|r| r.key == key)
         .unwrap_or_else(|| panic!("no author {key:?} in {report:#?}"))
 }
 
 /// Whether the stats table has a row whose Contributor key is exactly `key`.
 pub fn has_author(report: &Report, key: &str) -> bool {
-    report
-        .stats
-        .iter()
-        .flat_map(|t| &t.rows)
-        .any(|s| s.key == key)
+    rows(report).iter().any(|r| r.key == key)
 }
 
-pub fn total(report: &Report) -> &Stat {
-    &report
+/// The Total row's counts.
+pub fn total(report: &Report) -> Counts {
+    report
         .stats
         .as_ref()
         .unwrap_or_else(|| panic!("no stats table in {report:#?}"))
-        .total
-}
-
-/// A row's counts in table order: commits, files, insertions, deletions, net.
-pub fn counts(s: &Stat) -> (u64, u64, u64, u64, i64) {
-    (s.commits, s.num_files, s.insertions, s.deletions, s.net)
+        .total()
 }
 
 /// The reviews table row whose Contributor key is exactly `key`.

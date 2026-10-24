@@ -3,13 +3,12 @@
 
 mod common;
 
+use git_stats::logic::table::Counts;
 use git_stats::model::Options;
 use git_stats::repo::Repo;
 use tempfile::TempDir;
 
-use common::{
-    Commit, RepoBuilder, author, counts, has_author, options, report, reviewer, run, total,
-};
+use common::{Commit, RepoBuilder, author, has_author, options, report, reviewer, run, total};
 
 /// One commit per `(name, email, time)`, each on top of the last.
 fn linear(authors: &[(&str, &str, i64)]) -> (TempDir, Repo) {
@@ -68,19 +67,35 @@ fn reviewed_repo() -> (TempDir, Repo) {
 fn sums_per_author_insertions_deletions_and_net() {
     let (_dir, repo) = two_author_repo();
     let r = report(&repo, &options(None));
-    assert_eq!(
-        counts(author(&r, "Ada Lovelace")),
-        (2, 3, 5, 1, 4),
-        "{r:#?}"
-    );
-    assert_eq!(counts(author(&r, "Bob Ross")), (1, 1, 1, 0, 1), "{r:#?}");
+    let ada = author(&r, "Ada Lovelace").counts;
+    let ada_counts = Counts {
+        commits: 2,
+        files: 3,
+        insertions: 5,
+        deletions: 1,
+    };
+    assert_eq!((ada, ada.net()), (ada_counts, 4), "{r:#?}");
+    let bob = author(&r, "Bob Ross").counts;
+    let bob_counts = Counts {
+        commits: 1,
+        files: 1,
+        insertions: 1,
+        deletions: 0,
+    };
+    assert_eq!((bob, bob.net()), (bob_counts, 1), "{r:#?}");
 }
 
 #[test]
 fn totals_cover_all_authors() {
     let (_dir, repo) = two_author_repo();
     let r = report(&repo, &options(None));
-    assert_eq!(counts(total(&r)), (3, 4, 6, 1, 5), "{r:#?}");
+    let want = Counts {
+        commits: 3,
+        files: 4,
+        insertions: 6,
+        deletions: 1,
+    };
+    assert_eq!(total(&r), want, "{r:#?}");
 }
 
 #[test]
@@ -142,15 +157,27 @@ fn email_flag_splits_same_name_distinct_emails() {
 
     // Without --email, the two identities collapse into one "Luke" row.
     let merged = report(&repo, &options(None));
-    assert_eq!(merged.stats.as_ref().unwrap().rows.len(), 1, "{merged:#?}");
-    assert_eq!(author(&merged, "Luke").commits, 2, "{merged:#?}");
+    assert_eq!(
+        merged.stats.as_ref().unwrap().rows().len(),
+        1,
+        "{merged:#?}"
+    );
+    assert_eq!(author(&merged, "Luke").counts.commits, 2, "{merged:#?}");
 
     // With --email, they become two rows keyed by `Name <email>`.
     let mut with_email = options(None);
     with_email.email = true;
     let split = report(&repo, &with_email);
-    assert_eq!(author(&split, "Luke <luke@a>").commits, 1, "{split:#?}");
-    assert_eq!(author(&split, "Luke <luke@b>").commits, 1, "{split:#?}");
+    assert_eq!(
+        author(&split, "Luke <luke@a>").counts.commits,
+        1,
+        "{split:#?}"
+    );
+    assert_eq!(
+        author(&split, "Luke <luke@b>").counts.commits,
+        1,
+        "{split:#?}"
+    );
 }
 
 #[test]
@@ -184,8 +211,8 @@ fn reverse_flips_sort_order() {
         ("Bob", "bob@x", 300),
     ]);
     let names = |opts: &Options| -> Vec<String> {
-        let r = report(&repo, opts);
-        r.stats.unwrap().rows.into_iter().map(|s| s.key).collect()
+        let stats = report(&repo, opts).stats.unwrap();
+        stats.rows().iter().map(|s| s.key.clone()).collect()
     };
 
     // Descending by commits: Ada (2) precedes Bob (1).
