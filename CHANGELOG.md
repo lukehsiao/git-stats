@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.1
+
+### Patch Changes
+
+- [#114](https://github.com/lukehsiao/git-stats/pull/114) [`5fc91df`](https://github.com/lukehsiao/git-stats/commit/5fc91df8eaaa947f510b3eeaa0621fe0e33bbd8e) - **fix**: An author with an empty name is now shown by their email, as reviewers already were, instead of a blank row (or ` <email>` with `--email`). This also splits rows: without `--email`, all empty-name authors used to share one blank row, and now each email gets its own. `git shortlog` still groups them under one blank name. An author without an email now shows as just the name with `--email`, as reviewers already did, rather than `Name <>`.
+
+- [#114](https://github.com/lukehsiao/git-stats/pull/114) [`345688e`](https://github.com/lukehsiao/git-stats/commit/345688ec219b2e9d93f86a23a14018bf395342f4) - **fix**: Large commits that rename many files and also edit some of them now count those renames as one changed file each, as `git log --numstat` does. gitoxide used to stop pairing edited renames once the number of candidate pairs passed the rename limit, while git compares that number against the square of the limit. In git.git, `1f010d6bdf75` ("doc: use .adoc extension for AsciiDoc files") went from 993 files and +28,616/-28,616 lines to 919 files and +614/-614, which matches git.
+
+- [#114](https://github.com/lukehsiao/git-stats/pull/114) [`13efa17`](https://github.com/lukehsiao/git-stats/commit/13efa179b8881104d79da2cfb978bde6e796126c) - **fix**: Reviewers now go through `.mailmap`, as `git shortlog --group=trailer` does, so a reviewer who changed name or email is one row instead of two. Trailer values are also split the way git splits them, which shows with `--email`: the email ends at the first `>`, so `Ada <ada@example.com> # see <foo>` is keyed as `Ada <ada@example.com>`, and spaces inside the brackets are kept, so `Ada < ada@example.com >` no longer merges with `Ada <ada@example.com>`.
+
+<pre>
+$ git-stats v0.3.0..v0.3.1
+Author      Commits  Changed Files  Insertions  Deletions  Net Δ
+Luke Hsiao       13             67       +2162      -2011   +151
+Total            13             67       +2162      -2011   +151
+</pre>
+
 ## 0.3.0
 
 ### Minor Changes
