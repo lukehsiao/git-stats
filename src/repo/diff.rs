@@ -1,5 +1,13 @@
 //! Numstat computation: gix diffs each commit's tree against its base, in parallel.
 
+use std::ops::ControlFlow;
+
+use gix::bstr::BStr;
+use gix::diff::blob::ResourceKind;
+use gix::diff::blob::platform::prepare_diff::Operation;
+use gix::object::tree::EntryKind;
+use gix::object::tree::diff::Change;
+
 use super::{Numstat, OBJECT_CACHE_BYTES, Revisions};
 use crate::error::{Error, Result};
 use crate::model::DiffStat;
@@ -34,12 +42,14 @@ impl<'a> Worker<'a> {
         };
         if self.caches.is_none() {
             let walk = self.revisions.diff_cache(&self.repo)?;
-            let count = walk.clone();
+            let mut count = walk.clone();
+            // numstat counts lines with the internal diff, whatever diff driver the attributes name.
+            count.options.skip_internal_diff_if_external_is_configured = false;
             self.caches = Some((walk, count));
         }
         let Self { repo, caches, .. } = self;
         let (walk_cache, count_cache) = caches.as_mut().expect("initialized above");
-        diff_numstat(repo, walk_cache, count_cache, id, base)
+        diff_numstat(repo, walk_cache, count_cache, id, base).map_err(|e| in_partial_clone(repo, e))
     }
 }
 
@@ -66,37 +76,36 @@ fn diff_numstat(
     // Equivalent to `gix::Tree::stats`, but driving caller-owned caches so the index and attribute
     // stack are read once per worker rather than per commit.
     let (mut files, mut insertions, mut deletions) = (0u64, 0u64, 0u64);
-    old_tree
+    let mut failure = None;
+    let walked = old_tree
         .changes()
         .map_err(|e| Error::DiffStats(Box::new(e)))?
         .for_each_to_obtain_tree_with_cache(&new_tree, walk_cache, |change| {
-            if let Some((ins, del)) = gitlink_lines(&change) {
-                files += 1;
-                insertions += ins;
-                deletions += del;
-            } else {
-                match change
-                    .diff(count_cache)
-                    .ok()
-                    .and_then(|mut platform| platform.line_counts().ok())
-                {
-                    Some(Some(counts)) => {
-                        files += 1;
-                        insertions += u64::from(counts.insertions);
-                        deletions += u64::from(counts.removals);
-                    }
-                    // A binary change has no line counts (numstat's `-  -  path`) but still counts
-                    // as a changed file, as in `git diff --shortstat`.
-                    Some(None) => files += 1,
-                    None => {}
+            let lines = change_lines(repo, count_cache, id, &change);
+            // The cache keys its contents by object ID alone, so clear it between changes. Else a
+            // file would reuse the binary decision of an earlier file with the same contents at a
+            // path with other attributes. Clearing also bounds memory.
+            count_cache.clear_resource_cache_keep_allocation();
+            match lines {
+                Ok(Some((ins, del))) => {
+                    files += 1;
+                    insertions += ins;
+                    deletions += del;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    failure = Some(e);
+                    return Ok(ControlFlow::Break(()));
                 }
             }
-            // The resource cache only grows; clear it between changes to bound memory.
-            count_cache.clear_resource_cache_keep_allocation();
-            Ok(std::ops::ControlFlow::Continue(()))
-        })
-        .map_err(|e| Error::DiffStats(Box::new(e)))?;
+            Ok(ControlFlow::Continue(()))
+        });
     walk_cache.clear_resource_cache_keep_allocation();
+    // Stopping the walk early can make gix report a cancellation, so the cause comes first.
+    if let Some(e) = failure {
+        return Err(e);
+    }
+    walked.map_err(|e| Error::DiffStats(Box::new(e)))?;
 
     Ok(DiffStat {
         insertions,
@@ -105,35 +114,174 @@ fn diff_numstat(
     })
 }
 
-/// The numstat of a submodule (gitlink) change, which carries no blob to diff. git renders the
-/// pointer as a one-line `Subproject commit <hash>` pseudo-file, so an added gitlink is +1, a
-/// removed one -1, and a repointed one +1/-1. A renamed gitlink is paired into a single file whose
-/// line only changes when the commit it points to also changed, matching git's `0 0 old => new`.
-/// Returns `None` for changes not purely between gitlinks; a blob<->gitlink type change falls
-/// through to the regular blob diff.
-fn gitlink_lines(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(u64, u64)> {
-    use gix::object::tree::diff::Change;
+/// `e`, wrapped in [`Error::PartialClone`] when `repo` is a partial clone, where a missing object
+/// is the likely cause of a failed read.
+fn in_partial_clone(repo: &gix::Repository, e: Error) -> Error {
+    let config = repo.config_snapshot();
+    // git marks the remote of a partial clone with `promisor`. Older git versions set
+    // `extensions.partialClone` instead.
+    let promisor = config
+        .plumbing()
+        .sections_by_name("remote")
+        .into_iter()
+        .flatten()
+        .filter_map(|remote| remote.value_implicit("promisor"))
+        // git reads a key without a value as true.
+        .any(|value| {
+            value.is_none_or(|v| gix::config::Boolean::try_from(BStr::new(&v)).is_ok_and(|b| b.0))
+        });
+    if promisor || config.string("extensions.partialClone").is_some() {
+        Error::PartialClone(Box::new(e))
+    } else {
+        e
+    }
+}
+
+/// One side of a tree change: the entry's kind, object, and path, or `None` where no entry exists.
+type Side<'a> = Option<(EntryKind, gix::ObjectId, &'a BStr)>;
+
+/// The lines that one tree change inserts and deletes, as `git log --numstat` counts them, or
+/// `None` when the change is not a file. A directory is not a file, because each file in it is a
+/// change of its own. A binary file counts with no lines.
+///
+/// git shows a submodule (gitlink) as a one-line `Subproject commit <hash>` pseudo-file. So a
+/// gitlink side adds or removes that one line, unless both sides point at the same commit, as in a
+/// renamed submodule. A file swapped with a submodule counts as one file, with the file's lines on
+/// its side and the pseudo-file's line on the other.
+///
+/// # Errors
+///
+/// Returns [`Error::ReadBlob`] if a file's contents cannot be read, for example because a partial
+/// clone has not fetched them.
+fn change_lines(
+    repo: &gix::Repository,
+    cache: &mut gix::diff::blob::Platform,
+    commit: gix::ObjectId,
+    change: &Change<'_, '_, '_>,
+) -> Result<Option<(u64, u64)>> {
+    let (old, new) = sides(change);
+    if [old, new]
+        .iter()
+        .flatten()
+        .any(|&(kind, ..)| kind == EntryKind::Tree)
+    {
+        return Ok(None);
+    }
+    let gitlink = |side: Side<'_>| match side {
+        Some((EntryKind::Commit, id, _)) => Some(id),
+        _ => None,
+    };
+    let (old_link, new_link) = (gitlink(old), gitlink(new));
+    let same_pointer = old_link.is_some() && old_link == new_link;
+    let mut insertions = u64::from(new_link.is_some() && !same_pointer);
+    let mut deletions = u64::from(old_link.is_some() && !same_pointer);
+    let old_file = old.filter(|&(kind, ..)| kind != EntryKind::Commit);
+    let new_file = new.filter(|&(kind, ..)| kind != EntryKind::Commit);
+    if old_file.is_some() || new_file.is_some() {
+        match file_lines(repo, cache, commit, old_file, new_file)? {
+            Some((ins, del)) => {
+                insertions += ins;
+                deletions += del;
+            }
+            // numstat shows a binary file as `-  -  path`, and `git diff --shortstat` still counts
+            // it as a changed file.
+            None => return Ok(Some((0, 0))),
+        }
+    }
+    Ok(Some((insertions, deletions)))
+}
+
+/// The old and new sides of `change`.
+fn sides<'a>(change: &Change<'a, '_, '_>) -> (Side<'a>, Side<'a>) {
     match *change {
-        Change::Addition { entry_mode, .. } if entry_mode.is_commit() => Some((1, 0)),
-        Change::Deletion { entry_mode, .. } if entry_mode.is_commit() => Some((0, 1)),
-        Change::Modification {
-            previous_entry_mode,
+        Change::Addition {
+            location,
             entry_mode,
+            id,
             ..
-        } if previous_entry_mode.is_commit() && entry_mode.is_commit() => Some((1, 1)),
+        } => (None, Some((entry_mode.kind(), id.detach(), location))),
+        Change::Deletion {
+            location,
+            entry_mode,
+            id,
+            ..
+        } => (Some((entry_mode.kind(), id.detach(), location)), None),
+        Change::Modification {
+            location,
+            previous_entry_mode,
+            previous_id,
+            entry_mode,
+            id,
+        } => (
+            Some((previous_entry_mode.kind(), previous_id.detach(), location)),
+            Some((entry_mode.kind(), id.detach(), location)),
+        ),
         Change::Rewrite {
+            source_location,
             source_entry_mode,
             source_id,
             entry_mode,
             id,
+            location,
             ..
-        } if source_entry_mode.is_commit() && entry_mode.is_commit() => {
-            if source_id.detach() == id.detach() {
-                Some((0, 0))
-            } else {
-                Some((1, 1))
-            }
+        } => (
+            Some((
+                source_entry_mode.kind(),
+                source_id.detach(),
+                source_location,
+            )),
+            Some((entry_mode.kind(), id.detach(), location)),
+        ),
+    }
+}
+
+/// The lines that turning the `old` file into the `new` one inserts and deletes, where a missing
+/// side is empty, or `None` when either file is binary. At least one side must be a file.
+fn file_lines(
+    repo: &gix::Repository,
+    cache: &mut gix::diff::blob::Platform,
+    commit: gix::ObjectId,
+    old: Side<'_>,
+    new: Side<'_>,
+) -> Result<Option<(u64, u64)>> {
+    let Some((kind, id, path)) = new.or(old) else {
+        unreachable!("the caller passes at least one file");
+    };
+    // gix reads a null ID as an empty file, which stands in for a missing side: in an addition, a
+    // deletion, or opposite a submodule.
+    let empty = (kind, id.kind().null(), path);
+    for (side, resource) in [
+        (old, ResourceKind::OldOrSource),
+        (new, ResourceKind::NewOrDestination),
+    ] {
+        let (kind, id, path) = side.unwrap_or(empty);
+        let read_blob = |source| Error::ReadBlob {
+            commit: commit.to_string(),
+            path: path.to_string(),
+            source,
+        };
+        // A tree entry with a null ID is corrupt. git fails to read it, but gix would read it as an
+        // empty file.
+        if side.is_some() && id.is_null() {
+            return Err(read_blob("the tree entry has a null object ID".into()));
         }
-        _ => None,
+        cache
+            .set_resource(id, kind, path, resource, &repo.objects)
+            .map_err(|e| read_blob(e.into()))?;
+    }
+    let prep = cache.prepare_diff().expect("both sides are set above");
+    match prep.operation {
+        Operation::InternalDiff { algorithm } => {
+            let input = prep.interned_input();
+            let diff = gix::diff::blob::Diff::compute(algorithm, &input);
+            Ok(Some((
+                u64::from(diff.count_additions()),
+                u64::from(diff.count_removals()),
+            )))
+        }
+        Operation::SourceOrDestinationIsBinary => Ok(None),
+        Operation::ExternalCommand { .. } => {
+            unreachable!("the count cache turns external diffs off")
+        }
     }
 }

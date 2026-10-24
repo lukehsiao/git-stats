@@ -331,6 +331,182 @@ fn gitlink_renames_count_as_one_unchanged_file() {
     assert_eq!(sum(&commits), (3, want), "{commits:#?}");
 }
 
+/// git diffs a file swapped with a submodule as one file: the file's lines on its side, and the
+/// one `Subproject commit` line on the other. A binary file on either side makes the whole entry
+/// binary, which git shows as `-  -  x`.
+#[test]
+fn file_and_submodule_swaps_count_like_git_numstat() {
+    let (sha, _) = submodule_commits();
+    let binary = [0u8, 159, 146, 150, 0, 10];
+    let mut b = RepoBuilder::new();
+    let c1 = b.commit(ada().file("x", "1\n2\n3\n"));
+    let c2 = b.commit(ada().parent(c1).gitlink("x", sha));
+    let c3 = b.commit(ada().parent(c2).file("x", "a\nb\n"));
+    let c4 = b.commit(ada().parent(c3).gitlink("x", sha));
+    let c5 = b.commit(ada().parent(c4).file("x", binary));
+    b.commit(ada().parent(c5).gitlink("x", sha));
+    let (_dir, repo) = b.open();
+    let diffs: Vec<DiffStat> = read(&repo, Some("HEAD"))
+        .into_iter()
+        .map(|(_, diff)| diff)
+        .collect();
+
+    // Newest first, as `git log --numstat` prints them.
+    let one_file = |insertions, deletions| DiffStat {
+        insertions,
+        deletions,
+        files: 1,
+    };
+    let want = [
+        one_file(0, 0),
+        one_file(0, 0),
+        one_file(1, 2),
+        one_file(2, 1),
+        one_file(1, 3),
+        one_file(3, 0),
+    ];
+    assert_eq!(diffs, want);
+}
+
+/// A directory is not a file. When a file replaces a directory, or the reverse, git counts the
+/// file and each file in the directory, but not the directory itself.
+#[test]
+fn directories_swapped_with_files_count_only_the_files() {
+    let mut b = RepoBuilder::new();
+    let c1 = b.commit(ada().file("dir/x", "1\n2\n"));
+    let c2 = b.commit(ada().parent(c1).file("dir", "a\n"));
+    b.commit(ada().parent(c2).file("dir/y", "1\n2\n3\n"));
+    let (_dir, repo) = b.open();
+    let diffs: Vec<DiffStat> = read(&repo, Some("HEAD"))
+        .into_iter()
+        .map(|(_, diff)| diff)
+        .collect();
+
+    // git log --numstat, newest first: `0 1 dir` and `3 0 dir/y`; `1 0 dir` and `0 2 dir/x`;
+    // `2 0 dir/x`.
+    let want = [
+        DiffStat {
+            insertions: 3,
+            deletions: 1,
+            files: 2,
+        },
+        DiffStat {
+            insertions: 1,
+            deletions: 2,
+            files: 2,
+        },
+        DiffStat {
+            insertions: 2,
+            deletions: 0,
+            files: 1,
+        },
+    ];
+    assert_eq!(diffs, want);
+}
+
+/// Files with the same contents can have different attributes. Each counts by its own path's
+/// attributes, as in git, so a binary file does not make its twin binary.
+#[test]
+fn identical_contents_follow_each_paths_attributes() {
+    let mut b = RepoBuilder::new();
+    b.commit(
+        ada()
+            .file(".gitattributes", "*.bin binary\n")
+            .file("a.bin", "x\n")
+            .file("b.txt", "x\n"),
+    );
+    let (_dir, repo) = b.open();
+
+    // git log --numstat: `1 0 .gitattributes`, `- - a.bin`, `1 0 b.txt`.
+    let want = DiffStat {
+        insertions: 2,
+        deletions: 0,
+        files: 3,
+    };
+    assert_eq!(sum(&read(&repo, Some("HEAD"))), (1, want));
+}
+
+/// A file whose contents the repository lacks fails the read rather than counting as nothing. A
+/// modification stops gix's tree walk partway, which is the harder case.
+#[test]
+fn a_missing_file_fails_naming_the_commit_and_path() {
+    let mut b = RepoBuilder::new();
+    let base = b.commit(ada().file("a.txt", "a\n"));
+    let commit = b.commit(ada().parent(base).file_id("a.txt", missing_blob()));
+    let (_dir, repo) = b.open();
+
+    let err = repo.read(Some("HEAD"), |_| true, false).unwrap_err();
+    let commit = commit.to_string();
+    assert!(
+        matches!(&err, git_stats::Error::ReadBlob { commit: c, path, .. }
+            if *c == commit && path == "a.txt"),
+        "{err:?}"
+    );
+}
+
+/// In a partial clone, a failed read points at the missing objects, whether a file's own diff or
+/// gix's rename detection reads the missing file first. git marks a partial clone with a promisor
+/// remote, or with `extensions.partialClone` in older versions.
+#[test]
+fn a_partial_clone_names_itself_when_objects_are_missing() {
+    let partial_clone_error = |marker: (&str, &str), second: Commit| {
+        let mut b = RepoBuilder::new();
+        b.config(marker.0, marker.1);
+        let base = b.commit(ada().file("a.txt", "1\n2\n3\n"));
+        b.commit(second.parent(base));
+        let (_dir, repo) = b.open();
+        repo.read(Some("HEAD"), |_| true, false).unwrap_err()
+    };
+    let promisor = ("remote.origin.promisor", "true");
+    let modified = partial_clone_error(promisor, ada().file_id("a.txt", missing_blob()));
+    // Deleting `a.txt` and adding `b.txt` makes rename detection read `b.txt`.
+    let renamed = partial_clone_error(promisor, ada().file_id("b.txt", missing_blob()));
+    let older = partial_clone_error(
+        ("extensions.partialClone", "origin"),
+        ada().file_id("a.txt", missing_blob()),
+    );
+
+    for err in [modified, renamed, older] {
+        assert!(matches!(err, git_stats::Error::PartialClone(_)), "{err:?}");
+    }
+
+    let disabled = partial_clone_error(
+        ("remote.origin.promisor", "false"),
+        ada().file_id("a.txt", missing_blob()),
+    );
+    assert!(
+        matches!(disabled, git_stats::Error::ReadBlob { .. }),
+        "{disabled:?}"
+    );
+}
+
+/// A tree entry with a null object ID is corrupt, and git fails to read it. gix would read it as an
+/// empty file, so without a check it would count as an empty file or panic.
+#[test]
+fn a_null_object_id_fails_like_git() {
+    let null = ObjectId::from_hex(b"0000000000000000000000000000000000000000").unwrap();
+    let mut b = RepoBuilder::new();
+    let base = b.commit(ada().file("a.txt", "a\n"));
+    b.commit(
+        ada()
+            .parent(base)
+            .file("a.txt", "a\n")
+            .file_id("z.txt", null),
+    );
+    let (_dir, repo) = b.open();
+
+    let err = repo.read(Some("HEAD"), |_| true, false).unwrap_err();
+    assert!(
+        matches!(&err, git_stats::Error::ReadBlob { path, .. } if path == "z.txt"),
+        "{err:?}"
+    );
+}
+
+/// An arbitrary blob ID that no test repository holds.
+fn missing_blob() -> ObjectId {
+    ObjectId::from_hex(b"3333333333333333333333333333333333333333").unwrap()
+}
+
 /// A `.mailmap` with an old identity, two commits under it, and one by an Author it does not
 /// mention. One commit names the old identity as its Reviewer.
 fn mailmapped() -> (TempDir, Repo) {

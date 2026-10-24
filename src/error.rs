@@ -77,6 +77,22 @@ pub enum Error {
     #[error("could not compute diff stats")]
     DiffStats(#[source] Source),
 
+    /// A file's contents in a commit could not be read to count its lines.
+    #[error("could not read {path:?} in commit {commit}")]
+    ReadBlob {
+        commit: String,
+        path: String,
+        #[source]
+        source: Source,
+    },
+
+    /// A read failed in a partial clone, which fetches objects only on demand. gitoxide does not
+    /// fetch them, so a missing object is the likely cause.
+    #[error(
+        "this partial clone lacks objects the stats need; fetch them first, for example with `git log --numstat` over the same range"
+    )]
+    PartialClone(#[source] Box<Error>),
+
     /// An `--author` pattern was not a valid regular expression.
     #[error("invalid author pattern")]
     AuthorPattern(#[from] regex::Error),

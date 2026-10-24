@@ -4,6 +4,7 @@
 // crate would otherwise warn about the rest.
 #![allow(dead_code)]
 
+use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 use std::process::Command;
@@ -130,7 +131,8 @@ pub struct Commit {
 
 enum Entry {
     Blob(Vec<u8>),
-    Gitlink(ObjectId),
+    /// An entry of this kind that points at this object, which need not exist.
+    Object(EntryKind, ObjectId),
 }
 
 impl Default for Commit {
@@ -185,8 +187,16 @@ impl Commit {
     /// Add a submodule entry that points at `commit`, which need not exist.
     #[must_use]
     pub fn gitlink(mut self, path: &str, commit: ObjectId) -> Self {
-        self.entries
-            .push((path.to_string(), Entry::Gitlink(commit)));
+        let entry = Entry::Object(EntryKind::Commit, commit);
+        self.entries.push((path.to_string(), entry));
+        self
+    }
+
+    /// Add a file entry that points at `blob`, which need not exist, as in a partial clone.
+    #[must_use]
+    pub fn file_id(mut self, path: &str, blob: ObjectId) -> Self {
+        let entry = Entry::Object(EntryKind::Blob, blob);
+        self.entries.push((path.to_string(), entry));
         self
     }
 }
@@ -212,24 +222,7 @@ impl RepoBuilder {
 
     /// Write `commit` and return its ID.
     pub fn commit(&mut self, commit: Commit) -> ObjectId {
-        let mut tree = gix::objs::Tree::empty();
-        for (path, entry) in commit.entries {
-            let (kind, oid) = match entry {
-                Entry::Blob(bytes) => (
-                    EntryKind::Blob,
-                    self.repo.write_blob(bytes).unwrap().detach(),
-                ),
-                Entry::Gitlink(id) => (EntryKind::Commit, id),
-            };
-            tree.entries.push(gix::objs::tree::Entry {
-                mode: kind.into(),
-                filename: path.into(),
-                oid,
-            });
-        }
-        // git requires tree entries in its own name order.
-        tree.entries.sort();
-        let tree = self.repo.write_object(&tree).unwrap().detach();
+        let tree = self.write_tree(commit.entries);
         let signature = gix::actor::Signature {
             name: commit.name.into(),
             email: commit.email.into(),
@@ -250,6 +243,44 @@ impl RepoBuilder {
             .detach();
         self.head = Some(id);
         id
+    }
+
+    /// Write the tree of `entries` and return its ID. A path with a `/` puts its entry in a
+    /// subdirectory.
+    fn write_tree(&mut self, entries: Vec<(String, Entry)>) -> ObjectId {
+        let mut tree = gix::objs::Tree::empty();
+        let mut dirs: BTreeMap<String, Vec<(String, Entry)>> = BTreeMap::new();
+        for (path, entry) in entries {
+            if let Some((dir, rest)) = path.split_once('/') {
+                dirs.entry(dir.to_string())
+                    .or_default()
+                    .push((rest.to_string(), entry));
+                continue;
+            }
+            let (kind, oid) = match entry {
+                Entry::Blob(bytes) => (
+                    EntryKind::Blob,
+                    self.repo.write_blob(bytes).unwrap().detach(),
+                ),
+                Entry::Object(kind, id) => (kind, id),
+            };
+            tree.entries.push(gix::objs::tree::Entry {
+                mode: kind.into(),
+                filename: path.into(),
+                oid,
+            });
+        }
+        for (dir, entries) in dirs {
+            let oid = self.write_tree(entries);
+            tree.entries.push(gix::objs::tree::Entry {
+                mode: EntryKind::Tree.into(),
+                filename: dir.into(),
+                oid,
+            });
+        }
+        // git requires tree entries in its own name order.
+        tree.entries.sort();
+        self.repo.write_object(&tree).unwrap().detach()
     }
 
     pub fn branch(&mut self, name: &str, id: ObjectId) {
@@ -299,14 +330,18 @@ impl RepoBuilder {
         std::fs::write(self.dir.path().join(".mailmap"), contents).unwrap();
     }
 
-    /// Set `section.key` in the repository's own config.
+    /// Set `section.key`, or `section.subsection.key`, in the repository's own config.
     pub fn config(&mut self, key: &str, value: &str) {
         let (section, key) = key.split_once('.').unwrap();
+        let (header, key) = match key.rsplit_once('.') {
+            Some((subsection, key)) => (format!("{section} \"{subsection}\""), key),
+            None => (section.to_string(), key),
+        };
         let mut config = std::fs::OpenOptions::new()
             .append(true)
             .open(self.repo.git_dir().join("config"))
             .unwrap();
-        write!(config, "[{section}]\n\t{key} = {value}\n").unwrap();
+        write!(config, "[{header}]\n\t{key} = {value}\n").unwrap();
     }
 
     /// Point `HEAD` at the last commit written and open the repository as git-stats does. The
