@@ -1,6 +1,6 @@
 //! Numstat computation: gix diffs each commit's tree against its base, in parallel.
 
-use super::{Numstat, OBJECT_CACHE_BYTES, Revisions, WalkedCommit};
+use super::{Numstat, OBJECT_CACHE_BYTES, Revisions};
 use crate::error::{Error, Result};
 use crate::model::DiffStat;
 
@@ -27,8 +27,8 @@ impl<'a> Worker<'a> {
         }
     }
 
-    pub(super) fn numstat(&mut self, commit: &WalkedCommit) -> Result<DiffStat> {
-        let (id, base) = match commit.numstat {
+    pub(super) fn numstat(&mut self, numstat: Numstat) -> Result<DiffStat> {
+        let (id, base) = match numstat {
             Numstat::Diff { id, base } => (id, base),
             Numstat::Known(diff) => return Ok(diff),
         };

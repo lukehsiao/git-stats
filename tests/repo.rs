@@ -1,21 +1,29 @@
-//! Repository tests: revision ranges, Numstat, and `.mailmap`, over repositories that
-//! [`RepoBuilder`] writes.
+//! Repository tests: revision ranges, Numstat, Reviewers, and `.mailmap`, through [`Repo::read`]
+//! over repositories that [`RepoBuilder`] writes.
 
 mod common;
 
+use git_stats::model::{Contributor, DiffStat};
 use git_stats::repo::Repo;
 use gix::ObjectId;
 use tempfile::TempDir;
 
-use common::{Commit, RepoBuilder, author, counts, options, report, reviewer, total};
+use common::{Commit, RepoBuilder, read, sum};
 
 fn ada() -> Commit {
     Commit::default().author("Ada", "ada@example.com")
 }
 
+fn who(name: &str, email: &str) -> Contributor {
+    Contributor {
+        name: name.to_string(),
+        email: email.to_string(),
+    }
+}
+
 /// The number of commits `range` covers.
-fn commits_in(repo: &Repo, range: &str) -> u64 {
-    total(&report(repo, &options(Some(range)))).commits
+fn commits_in(repo: &Repo, range: &str) -> usize {
+    read(repo, Some(range)).len()
 }
 
 #[test]
@@ -31,13 +39,20 @@ fn counts_lines_and_review_trailers() {
 
     // Control for the shallow-clone probe: a full repository must not warn.
     assert!(!repo.is_shallow(), "full repository detected as shallow");
-    let mut opts = options(Some("HEAD"));
-    opts.reviews = true;
-    let r = report(&repo, &opts);
+    let commits = repo.read(Some("HEAD"), |_| true, true).unwrap();
 
-    // Ada: 2 commits; root adds 2 lines, the follow-up adds 1, so +3 insertions.
-    assert_eq!(author(&r, "Ada").insertions, 3, "{r:#?}");
-    assert_eq!(reviewer(&r, "Rev Iewer").commits, 1, "{r:#?}");
+    // The root adds 2 lines and the follow-up 1. Reviewers come one list per commit, newest first.
+    let want = DiffStat {
+        insertions: 3,
+        deletions: 0,
+        files: 2,
+    };
+    assert_eq!(sum(&commits.kept), (2, want), "{commits:#?}");
+    let rev = who("Rev Iewer", "rev@example.com");
+    assert_eq!(commits.reviewers, Some(vec![vec![], vec![rev]]));
+    // Not asked for, Reviewers are absent rather than empty.
+    let unread = repo.read(Some("HEAD"), |_| true, false).unwrap();
+    assert_eq!(unread.reviewers, None);
 }
 
 /// A base commit and the branches `main` and `feature`, one commit each, growing from it.
@@ -191,11 +206,16 @@ fn merge_commits_are_counted_but_add_no_lines() {
             .file("f0.txt", "f\n"),
     );
     let (_dir, repo) = d.b.open();
-    let r = report(&repo, &options(Some("HEAD")));
+    let commits = read(&repo, Some("HEAD"));
 
     // Four commits (base, main, feature, merge); the merge contributes no lines, so insertions
     // total only the three single-line file additions.
-    assert_eq!(counts(total(&r)), (4, 3, 3, 0, 3), "{r:#?}");
+    let want = DiffStat {
+        insertions: 3,
+        deletions: 0,
+        files: 3,
+    };
+    assert_eq!(sum(&commits), (4, want), "{commits:#?}");
 }
 
 #[test]
@@ -224,8 +244,13 @@ fn shallow_boundary_merges_diff_like_root_commits() {
     let (_dir, repo) = d.b.open();
     assert!(repo.is_shallow());
 
-    let r = report(&repo, &options(Some("HEAD")));
-    assert_eq!(counts(total(&r)), (2, 4, 4, 0, 4), "{r:#?}");
+    let commits = read(&repo, Some("HEAD"));
+    let want = DiffStat {
+        insertions: 4,
+        deletions: 0,
+        files: 4,
+    };
+    assert_eq!(sum(&commits), (2, want), "{commits:#?}");
 }
 
 #[test]
@@ -240,10 +265,15 @@ fn binary_file_changes_count_as_changed_files() {
             .file("blob.bin", [0u8, 159, 146, 150, 0, 10]),
     );
     let (_dir, repo) = b.open();
-    let r = report(&repo, &options(Some("HEAD")));
+    let commits = read(&repo, Some("HEAD"));
 
     // The binary file counts as a changed file; only the text file contributes lines.
-    assert_eq!(counts(total(&r)), (1, 2, 2, 0, 2), "{r:#?}");
+    let want = DiffStat {
+        insertions: 2,
+        deletions: 0,
+        files: 2,
+    };
+    assert_eq!(sum(&commits), (1, want), "{commits:#?}");
 }
 
 /// Two arbitrary commit IDs for submodule entries to point at. Gitlinks name commits in another
@@ -264,11 +294,16 @@ fn submodule_changes_count_like_git_numstat() {
     let added = b.commit(readme().parent(base).gitlink("sub", sha1));
     b.commit(readme().parent(added).gitlink("sub", sha2));
     let (_dir, repo) = b.open();
-    let r = report(&repo, &options(Some("HEAD")));
+    let commits = read(&repo, Some("HEAD"));
 
     // git log --numstat: base is `1 0 r.txt`, adding the gitlink is `1 0 sub` (one "Subproject
     // commit" line), repointing it is `1 1 sub`. Totals: 3 files, +3, -1.
-    assert_eq!(counts(total(&r)), (3, 3, 3, 1, 2), "{r:#?}");
+    let want = DiffStat {
+        insertions: 3,
+        deletions: 1,
+        files: 3,
+    };
+    assert_eq!(sum(&commits), (3, want), "{commits:#?}");
 }
 
 /// A renamed submodule is paired by the rename tracker into git's single `0 0 old => new` entry, so
@@ -284,11 +319,16 @@ fn gitlink_renames_count_as_one_unchanged_file() {
     let added = b.commit(readme().parent(base).gitlink("sub", sha));
     b.commit(readme().parent(added).gitlink("newsub", sha));
     let (_dir, repo) = b.open();
-    let r = report(&repo, &options(Some("HEAD")));
+    let commits = read(&repo, Some("HEAD"));
 
     // base is 1 file +1, adding the gitlink is 1 file +1, and the rename is 1 file whose
     // `Subproject commit` line is unchanged.
-    assert_eq!(counts(total(&r)), (3, 3, 2, 0, 2), "{r:#?}");
+    let want = DiffStat {
+        insertions: 2,
+        deletions: 0,
+        files: 3,
+    };
+    assert_eq!(sum(&commits), (3, want), "{commits:#?}");
 }
 
 /// A `.mailmap` with an old identity, two commits under it, and one by an Author it does not
@@ -319,41 +359,22 @@ fn mailmapped() -> (TempDir, Repo) {
 #[test]
 fn mailmap_folds_author_identities() {
     let (_dir, repo) = mailmapped();
-    let mut opts = options(Some("HEAD"));
-    opts.email = true;
-    let r = report(&repo, &opts);
-
-    let keys: Vec<&str> = r
-        .stats
-        .iter()
-        .flat_map(|t| &t.rows)
-        .map(|s| s.key.as_str())
+    let authors: Vec<Contributor> = read(&repo, Some("HEAD"))
+        .into_iter()
+        .map(|(meta, _)| meta.author)
         .collect();
-    // The old identity must not leak into any row, and the unmapped Author passes through.
-    assert_eq!(
-        keys,
-        ["New Name <new@example.com>", "Other <other@example.com>"],
-        "{r:#?}"
-    );
-    assert_eq!(
-        author(&r, "New Name <new@example.com>").commits,
-        2,
-        "{r:#?}"
-    );
+
+    // Newest first. The old identity must not leak, and the unmapped Author passes through.
+    let new = who("New Name", "new@example.com");
+    let other = who("Other", "other@example.com");
+    assert_eq!(authors, [other, new.clone(), new]);
 }
 
 #[test]
 fn mailmap_folds_reviewer_identities() {
     let (_dir, repo) = mailmapped();
-    let mut opts = options(Some("HEAD"));
-    opts.email = true;
-    opts.reviews = true;
-    let r = report(&repo, &opts);
+    let commits = repo.read(Some("HEAD"), |_| true, true).unwrap();
 
-    assert_eq!(r.reviews.len(), 1, "{r:#?}");
-    assert_eq!(
-        reviewer(&r, "New Name <new@example.com>").commits,
-        1,
-        "{r:#?}"
-    );
+    let reviewers = commits.reviewers.unwrap().concat();
+    assert_eq!(reviewers, [who("New Name", "new@example.com")]);
 }

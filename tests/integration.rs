@@ -10,7 +10,7 @@ use git_stats::model::Vcs;
 use git_stats::repo::Repo;
 
 mod common;
-use common::{git, git_available, options, report, reviewer, run, total};
+use common::{git, git_available, options, read, report, reviewer, run, sum};
 
 /// `git stats | head` style usage closes stdout before the report is fully written. Rust ignores
 /// SIGPIPE, so a plain `print!` panics on the resulting EPIPE; the binary must instead die quietly
@@ -233,19 +233,14 @@ fn shallow_clones_treat_boundary_commits_as_parentless() {
     // The binary warns on shallow clones via this probe; the full-clone control lives in
     // `tests/repo.rs`, `counts_lines_and_review_trailers`.
     assert!(repo.is_shallow(), "depth-2 clone should detect as shallow");
-    let r = report(&repo, &options(Some("HEAD")));
+    let (n, diff) = sum(&read(&repo, Some("HEAD")));
 
     // git log --numstat here shows c3 as +1 and the boundary commit c2 as its whole tree (+2),
     // exactly like a root commit, so the total is +3.
+    assert_eq!(n, 2, "both retained commits should count");
     assert_eq!(
-        total(&r).commits,
-        2,
-        "both retained commits should count:\n{r:#?}"
-    );
-    assert_eq!(
-        total(&r).insertions,
-        3,
-        "the boundary commit should diff against the empty tree:\n{r:#?}"
+        diff.insertions, 3,
+        "the boundary commit should diff against the empty tree"
     );
 }
 

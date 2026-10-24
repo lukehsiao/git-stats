@@ -37,17 +37,14 @@ impl Contributor {
     }
 }
 
-/// Everything the logic needs to know about a commit, independent of git.
+/// What the filter and the stats table need to know about a commit, independent of git.
 ///
 /// `time_seconds` is the committer timestamp (seconds since the Unix epoch), because that is the
-/// date `git log --since/--until` filters on. `reviewers` holds one entry per `Acked-by`,
-/// `Tested-by`, or `Reviewed-by` trailer, in message order, so a Reviewer named twice appears
-/// twice.
+/// date `git log --since/--until` filters on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitMeta {
     pub author: Contributor,
     pub time_seconds: i64,
-    pub reviewers: Vec<Contributor>,
 }
 
 /// Line and file changes for a single commit, equivalent to one commit's `git log --numstat`

@@ -15,7 +15,7 @@ use tempfile::TempDir;
 use git_stats::app;
 use git_stats::error::Result;
 use git_stats::logic::table::{Report, Review, Stat};
-use git_stats::model::{Options, SortBy, Vcs};
+use git_stats::model::{CommitMeta, DiffStat, Options, SortBy, Vcs};
 use git_stats::repo::Repo;
 
 /// Default options over `range`, as the CLI gives them without flags.
@@ -45,6 +45,23 @@ pub fn run(repo: &Repo, opts: &Options) -> Result<Report> {
 
 pub fn report(repo: &Repo, opts: &Options) -> Report {
     run(repo, opts).unwrap()
+}
+
+/// Every commit in `range`, all kept, each with its numstat.
+pub fn read(repo: &Repo, range: Option<&str>) -> Vec<(CommitMeta, DiffStat)> {
+    repo.read(range, |_| true, false).unwrap().kept
+}
+
+/// How many `commits` there are, and their numstats summed.
+pub fn sum(commits: &[(CommitMeta, DiffStat)]) -> (usize, DiffStat) {
+    let total = commits
+        .iter()
+        .fold(DiffStat::default(), |t, (_, d)| DiffStat {
+            insertions: t.insertions + d.insertions,
+            deletions: t.deletions + d.deletions,
+            files: t.files + d.files,
+        });
+    (commits.len(), total)
 }
 
 /// The stats table row whose Contributor key is exactly `key`.

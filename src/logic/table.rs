@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::model::{CommitMeta, DiffStat, SortBy};
+use crate::model::{CommitMeta, Contributor, DiffStat, SortBy};
 
 /// One row of the stats table: an Author's sums, or the Total row's.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,8 +45,8 @@ pub struct Report {
 /// flipped. Ties sort by key, A to Z in both directions, so the order does not depend on which
 /// commit the walk saw first. Sums saturate rather than overflow.
 #[must_use]
-pub fn stats_table<'a>(
-    commits: impl IntoIterator<Item = (&'a CommitMeta, DiffStat)>,
+pub fn stats_table(
+    commits: &[(CommitMeta, DiffStat)],
     email: bool,
     sort: SortBy,
     reverse: bool,
@@ -60,9 +60,9 @@ pub fn stats_table<'a>(
             by_key
                 .entry(meta.author.key(email))
                 .or_insert_with(|| empty_stat(String::new())),
-            diff,
+            *diff,
         );
-        add(&mut total, diff);
+        add(&mut total, *diff);
     }
     if total.commits == 0 {
         return None;
@@ -90,19 +90,16 @@ pub fn stats_table<'a>(
     Some(StatsTable { rows, total })
 }
 
-/// Build the reviews table: per Reviewer, keyed by
-/// [`Contributor::key`](crate::model::Contributor::key) with `email`, the commits they signed off
-/// on. A Reviewer is credited at most once per commit even if several of its trailers name them.
-/// Rows come in descending commit count, ties by key, A to Z.
+/// Build the reviews table from each commit's Reviewers: per Reviewer, keyed by
+/// [`Contributor::key`] with `email`, the commits they signed off on. A Reviewer is credited at most
+/// once per commit even if several of its trailers name them. Rows come in descending commit count,
+/// ties by key, A to Z.
 #[must_use]
-pub fn reviews_table<'a>(
-    metas: impl IntoIterator<Item = &'a CommitMeta>,
-    email: bool,
-) -> Vec<Review> {
+pub fn reviews_table(reviewers: &[Vec<Contributor>], email: bool) -> Vec<Review> {
     let mut counts: HashMap<String, u64> = HashMap::new();
     let mut credited: Vec<String> = Vec::new();
-    for m in metas {
-        for r in &m.reviewers {
+    for named in reviewers {
+        for r in named {
             let key = r.key(email);
             if !credited.contains(&key) {
                 credited.push(key);
@@ -150,7 +147,6 @@ fn net(insertions: u64, deletions: u64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Contributor;
     use hegel::generators::{self, Generator};
     use std::cmp::Ordering;
     use std::collections::{BTreeMap, BTreeSet};
@@ -166,13 +162,7 @@ mod tests {
         CommitMeta {
             author,
             time_seconds: 0,
-            reviewers: Vec::new(),
         }
-    }
-
-    /// The pairs [`stats_table`] takes, borrowed from owned test data.
-    fn pairs(commits: &[(CommitMeta, DiffStat)]) -> impl Iterator<Item = (&CommitMeta, DiffStat)> {
-        commits.iter().map(|(meta, diff)| (meta, *diff))
     }
 
     /// A small Author pool forces grouping. It has multi-word names, so grouping and ordering see
@@ -224,7 +214,7 @@ mod tests {
 
     #[test]
     fn no_commits_build_no_table() {
-        assert_eq!(stats_table([], false, SortBy::Commits, false), None);
+        assert_eq!(stats_table(&[], false, SortBy::Commits, false), None);
     }
 
     /// Each row holds exactly the sums of the commits whose Author has its Contributor key, whatever
@@ -243,7 +233,7 @@ mod tests {
             e.2 += diff.insertions;
             e.3 += diff.deletions;
         }
-        let rows = stats_table(pairs(&commits), email, by, reverse)
+        let rows = stats_table(&commits, email, by, reverse)
             .map(|t| t.rows)
             .unwrap_or_default();
         let actual: BTreeMap<String, (u64, u64, u64, u64)> = rows
@@ -263,7 +253,7 @@ mod tests {
     #[hegel::test]
     fn total_matches_independent_sums(tc: hegel::TestCase) {
         let commits = tc.draw(commit_list().print_as_debug());
-        let Some(table) = stats_table(pairs(&commits), false, SortBy::Commits, false) else {
+        let Some(table) = stats_table(&commits, false, SortBy::Commits, false) else {
             assert_eq!(commits, []);
             return;
         };
@@ -298,7 +288,7 @@ mod tests {
         let commits = tc.draw(commit_list().print_as_debug());
         let by = tc.draw(any_sort_by().print_as_debug());
         let reverse = tc.draw(generators::booleans());
-        let rows = stats_table(pairs(&commits), false, by, reverse)
+        let rows = stats_table(&commits, false, by, reverse)
             .map(|t| t.rows)
             .unwrap_or_default();
         let ascending = (by == SortBy::Author) != reverse;
@@ -327,13 +317,13 @@ mod tests {
             };
             commits.push((authored_by(who("boundary", "b@x")), diff));
         }
-        let _ = stats_table(pairs(&commits), false, SortBy::Net, false);
+        let _ = stats_table(&commits, false, SortBy::Net, false);
     }
 
-    /// Commits whose Reviewers come from a small pool, so ties in commit count are common, and a
+    /// Each commit's Reviewers, drawn from a small pool, so ties in commit count are common, and a
     /// commit can name the same Reviewer twice. The pool has names that differ only in case.
     #[hegel::composite]
-    fn reviewed_commits(tc: &hegel::TestCase) -> Vec<CommitMeta> {
+    fn reviewed_commits(tc: &hegel::TestCase) -> Vec<Vec<Contributor>> {
         const REVIEWERS: [(&str, &str); 4] = [
             ("Zed", "z@x"),
             ("Ada", "a@x"),
@@ -341,36 +331,35 @@ mod tests {
             ("ada", "l@x"),
         ];
         let n = tc.draw(generators::integers::<usize>().max_value(20));
-        let mut metas = Vec::with_capacity(n);
+        let mut commits = Vec::with_capacity(n);
         for _ in 0..n {
             let picks = tc.draw(
                 generators::vecs(generators::integers::<usize>().max_value(REVIEWERS.len() - 1))
                     .max_size(3),
             );
-            metas.push(CommitMeta {
-                reviewers: picks
+            commits.push(
+                picks
                     .into_iter()
                     .map(|i| who(REVIEWERS[i].0, REVIEWERS[i].1))
                     .collect(),
-                ..authored_by(who("Author", "author@x"))
-            });
+            );
         }
-        metas
+        commits
     }
 
     /// Each Reviewer's count is the number of commits that name them at least once.
     #[hegel::test]
     fn reviews_count_each_commit_once(tc: hegel::TestCase) {
-        let metas = tc.draw(reviewed_commits().print_as_debug());
+        let commits = tc.draw(reviewed_commits().print_as_debug());
         let email = tc.draw(generators::booleans());
         let mut expected: BTreeMap<String, u64> = BTreeMap::new();
-        for m in &metas {
-            let keys: BTreeSet<String> = m.reviewers.iter().map(|r| r.key(email)).collect();
+        for reviewers in &commits {
+            let keys: BTreeSet<String> = reviewers.iter().map(|r| r.key(email)).collect();
             for key in keys {
                 *expected.entry(key).or_default() += 1;
             }
         }
-        let actual: BTreeMap<String, u64> = reviews_table(&metas, email)
+        let actual: BTreeMap<String, u64> = reviews_table(&commits, email)
             .into_iter()
             .map(|r| (r.key, r.commits))
             .collect();
@@ -381,9 +370,9 @@ mod tests {
     /// cannot depend on the order in which git or jj walks the commits.
     #[hegel::test]
     fn reviews_sort_by_count_then_name(tc: hegel::TestCase) {
-        let metas = tc.draw(reviewed_commits().print_as_debug());
+        let commits = tc.draw(reviewed_commits().print_as_debug());
         let email = tc.draw(generators::booleans());
-        for w in reviews_table(&metas, email).windows(2) {
+        for w in reviews_table(&commits, email).windows(2) {
             let (a, b) = (&w[0], &w[1]);
             assert!(
                 a.commits > b.commits || (a.commits == b.commits && a.key < b.key),

@@ -6,10 +6,10 @@ use std::process::Command;
 
 mod common;
 
-use git_stats::model::Vcs;
+use git_stats::model::{CommitMeta, DiffStat, Vcs};
 use git_stats::repo::Repo;
 
-use common::{counts, git, has_author, options, report, run, total};
+use common::{git, read, sum};
 
 /// A temporary directory holding a hermetic jj config next to a workspace.
 struct Fixture {
@@ -126,6 +126,14 @@ fn text_totals(out: &str) -> Vec<&str> {
         .collect()
 }
 
+/// The Author name of each commit, in walk order.
+fn author_names(commits: &[(CommitMeta, DiffStat)]) -> Vec<&str> {
+    commits
+        .iter()
+        .map(|(m, _)| m.author.name.as_str())
+        .collect()
+}
+
 /// Whether a usable `jj` binary is on PATH; tests skip gracefully without one.
 fn jj_available() -> bool {
     Command::new("jj").arg("--version").output().is_ok()
@@ -151,11 +159,16 @@ fn default_revset_counts_the_working_copy_and_skips_root() {
     two_commits_and_a_pending_edit(&f);
 
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let r = report(&repo, &options(None));
+    let commits = read(&repo, None);
 
     // `::@` is first, second, and the snapshotted @, each adding one file's lines: +2, +1, +1. jj's
     // virtual root commit has no git object, so reading it would fail the whole run.
-    assert_eq!(counts(total(&r)), (3, 3, 4, 0, 4), "{r:#?}");
+    let want = DiffStat {
+        insertions: 4,
+        deletions: 0,
+        files: 3,
+    };
+    assert_eq!(sum(&commits), (3, want), "{commits:#?}");
 }
 
 #[test]
@@ -176,10 +189,15 @@ fn revsets_resolve_change_ids() {
     ]);
 
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let r = report(&repo, &options(Some(&format!("{first}..@-"))));
+    let commits = read(&repo, Some(&format!("{first}..@-")));
 
     // jj's `x..y` is `::y ~ ::x`, which leaves only "second".
-    assert_eq!(counts(total(&r)), (1, 1, 1, 0, 1), "{r:#?}");
+    let want = DiffStat {
+        insertions: 1,
+        deletions: 0,
+        files: 1,
+    };
+    assert_eq!(sum(&commits), (1, want), "{commits:#?}");
 }
 
 #[test]
@@ -193,17 +211,27 @@ fn colocated_workspace_defaults_to_jj_unless_git_is_forced() {
 
     // Forced git reads HEAD, which jj keeps at @-, so the pending edit is out.
     let git = Repo::open(&f.ws, Vcs::Git).unwrap();
-    let git_r = report(&git, &options(None));
-    assert_eq!(counts(total(&git_r)), (2, 2, 3, 0, 3), "git: {git_r:#?}");
+    let git_commits = read(&git, None);
+    let want = DiffStat {
+        insertions: 3,
+        deletions: 0,
+        files: 2,
+    };
+    assert_eq!(sum(&git_commits), (2, want), "git: {git_commits:#?}");
 
     let jj = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let r = report(&jj, &options(None));
-    assert_eq!(counts(total(&r)), (3, 3, 4, 0, 4), "jj: {r:#?}");
-    // The same commits read through either backend give the same report.
-    assert_eq!(report(&jj, &options(Some("::@-"))), git_r);
+    let commits = read(&jj, None);
+    let want = DiffStat {
+        insertions: 4,
+        deletions: 0,
+        files: 3,
+    };
+    assert_eq!(sum(&commits), (3, want), "jj: {commits:#?}");
+    // The same commits read through either backend come out the same.
+    assert_eq!(read(&jj, Some("::@-")), git_commits);
 
     // In jj mode the range is a revset, where `HEAD` names nothing.
-    assert!(run(&jj, &options(Some("HEAD"))).is_err());
+    assert!(jj.read(Some("HEAD"), |_| true, false).is_err());
 }
 
 #[test]
@@ -217,11 +245,11 @@ fn non_colocated_workspace_applies_the_workspace_mailmap() {
     f.jj(&["commit", "-m", "add mailmap"]);
 
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let r = report(&repo, &options(Some("@-")));
+    let commits = read(&repo, Some("@-"));
 
     // jj's git store is bare and lives inside `.jj`, so the mailmap must come from the workspace
     // rather than a git worktree.
-    assert!(has_author(&r, "Ada Lovelace"), "{r:#?}");
+    assert_eq!(author_names(&commits), ["Ada Lovelace"], "{commits:#?}");
 }
 
 /// A non-colocated store has no index and an unborn `HEAD`, so attributes must come from the
@@ -240,11 +268,16 @@ fn workspace_gitattributes_apply_without_a_git_worktree() {
     f.jj(&["commit", "-m", "second"]);
 
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let r = report(&repo, &options(Some("::@-")));
+    let commits = read(&repo, Some("::@-"));
 
     // `-diff` makes `a.bin` binary: each change counts as a file with no lines, so only the one
     // `.gitattributes` line is an insertion.
-    assert_eq!(counts(total(&r)), (2, 3, 1, 0, 1), "{r:#?}");
+    let want = DiffStat {
+        insertions: 1,
+        deletions: 0,
+        files: 3,
+    };
+    assert_eq!(sum(&commits), (2, want), "{commits:#?}");
 }
 
 #[test]
@@ -267,12 +300,13 @@ fn secondary_workspace_mailmap_wins_over_the_git_worktree() {
     .unwrap();
 
     let repo = Repo::open(&second, Vcs::Auto).unwrap();
-    let r = report(&repo, &options(Some("::@")));
+    let commits = read(&repo, Some("::@"));
+    let names = author_names(&commits);
 
     // Both files map the same email. The workspace being read decides, as the worktree does for
     // git.
-    assert!(has_author(&r, "Second Mapping"), "{r:#?}");
-    assert!(!has_author(&r, "Main Mapping"), "{r:#?}");
+    assert!(names.contains(&"Second Mapping"), "{names:?}");
+    assert!(!names.contains(&"Main Mapping"), "{names:?}");
 }
 
 #[test]
@@ -297,11 +331,16 @@ fn git_repository_nested_in_a_jj_workspace_stays_git() {
     );
 
     let repo = Repo::open(&nested, Vcs::Auto).unwrap();
-    let r = report(&repo, &options(None));
+    let commits = read(&repo, None);
 
     // The nearer `.git` wins: only the nested repository's one commit counts.
-    assert_eq!(counts(total(&r)), (1, 1, 1, 0, 1), "{r:#?}");
-    assert!(has_author(&r, "Bob"), "{r:#?}");
+    let want = DiffStat {
+        insertions: 1,
+        deletions: 0,
+        files: 1,
+    };
+    assert_eq!(sum(&commits), (1, want), "{commits:#?}");
+    assert_eq!(author_names(&commits), ["Bob"], "{commits:#?}");
 }
 
 /// A conflicted commit "right" rebased onto "left", and `@` on top of it resolving `a.txt` to two
@@ -335,14 +374,14 @@ fn conflicted_commits_count_their_materialized_diff() {
     }
     let f = conflict_fixture();
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let r = report(&repo, &options(Some("conflicts()::@")));
+    let (n, diff) = sum(&read(&repo, Some("conflicts()::@")));
 
     // The conflicted commit replaces one line with conflict markers, and the resolution replaces
     // the markers with two lines, so each touches only a.txt and the pair adds one line more than
     // it removes, whatever the marker style. A git diff would also count the `.jjconflict-*` files
     // that jj stores in a conflicted commit's tree.
-    let t = total(&r);
-    assert_eq!((t.commits, t.num_files, t.net), (2, 2, 1), "{r:#?}");
+    assert_eq!((n, diff.files), (2, 2), "{diff:?}");
+    assert_eq!(diff.insertions, diff.deletions + 1, "{diff:?}");
 }
 
 /// jj counts a conflicted merge against its auto-merged parents, so a merge that adds a file gets
@@ -364,9 +403,9 @@ fn conflicted_merges_add_nothing() {
     f.jj(&["new", "subject(\"left\")", "subject(\"right\")"]);
     f.write("b.txt", "b\n");
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let r = report(&repo, &options(Some("@ & conflicts()")));
+    let commits = read(&repo, Some("@ & conflicts()"));
 
-    assert_eq!(counts(total(&r)), (1, 0, 0, 0, 0), "{r:#?}");
+    assert_eq!(sum(&commits), (1, DiffStat::default()), "{commits:#?}");
 }
 
 /// A clone that is shallow from jj's conflicted commit makes that commit a shallow boundary commit.
@@ -392,11 +431,10 @@ fn conflicted_shallow_boundary_counts_its_materialized_tree() {
     );
 
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let r = report(&repo, &options(Some("kid-")));
+    let (n, diff) = sum(&read(&repo, Some("kid-")));
 
     // Against `root()`, the materialized tree is `a.txt` alone, all of it added.
-    let t = total(&r);
-    assert_eq!((t.commits, t.num_files, t.deletions), (1, 1, 0), "{r:#?}");
+    assert_eq!((n, diff.files, diff.deletions), (1, 1, 0), "{diff:?}");
 }
 
 /// jj wraps log lines at `COLUMNS` when `ui.log-word-wrap` is set, even with stdout piped. A
@@ -441,9 +479,14 @@ fn forced_jj_ignores_a_nearer_git_repository() {
 
     let repo = Repo::open(&nested, Vcs::Jj).unwrap();
     // `::@-` leaves out whatever the snapshot of `@` picks up under `nested`.
-    let r = report(&repo, &options(Some("::@-")));
+    let commits = read(&repo, Some("::@-"));
 
-    assert_eq!(counts(total(&r)), (2, 2, 3, 0, 3), "{r:#?}");
+    let want = DiffStat {
+        insertions: 3,
+        deletions: 0,
+        files: 2,
+    };
+    assert_eq!(sum(&commits), (2, want), "{commits:#?}");
 }
 
 #[test]

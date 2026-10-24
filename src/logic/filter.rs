@@ -92,7 +92,6 @@ mod tests {
                 email: format!("{name}@example.com"),
             },
             time_seconds: tc.draw(generators::integers::<i64>()),
-            reviewers: Vec::new(),
         }
     }
 
@@ -103,7 +102,6 @@ mod tests {
                 email: "ada@x".to_string(),
             },
             time_seconds,
-            reviewers: Vec::new(),
         }
     }
 

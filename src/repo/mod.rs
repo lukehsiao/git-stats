@@ -16,17 +16,28 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use crate::error::{Error, Result};
-use crate::model::{CommitMeta, DiffStat, Vcs};
+use crate::model::{CommitMeta, Contributor, DiffStat, Vcs};
 
 /// The object cache each thread-local repository gets, so the trees and blobs a commit's walk and
 /// diff read repeatedly come from memory instead of the pack. 8 MiB comfortably holds a commit's
 /// trees.
 const OBJECT_CACHE_BYTES: usize = 8 * 1024 * 1024;
 
-/// A commit yielded by [`Repo::walk`]: its logic-facing metadata plus how [`Repo::numstats`] gets
-/// its numstat.
-pub struct WalkedCommit {
-    pub meta: CommitMeta,
+/// What [`Repo::read`] finds in a Revision range.
+#[derive(Debug)]
+pub struct Commits {
+    /// The commits that `keep` accepted, each with its numstat, in walk order.
+    pub kept: Vec<(CommitMeta, DiffStat)>,
+    /// The Reviewers of every commit in the range, kept or not, one list per commit in walk order.
+    /// `None` unless they were requested.
+    pub reviewers: Option<Vec<Vec<Contributor>>>,
+}
+
+/// A commit as the walk reads it: its metadata, its Reviewers (empty unless requested), and how to
+/// get its numstat.
+struct WalkedCommit {
+    meta: CommitMeta,
+    reviewers: Vec<Contributor>,
     numstat: Numstat,
 }
 
@@ -115,39 +126,54 @@ impl Repo {
         self.repo.to_thread_local().is_shallow().unwrap_or(false)
     }
 
-    /// Read commit metadata for every commit in `range`: a git revision range, or a revset in a jj
-    /// workspace. `None` means `HEAD` for git and `::@` for jj. Reviewers are read only when
-    /// `need_reviewers` is set, since they feed only the reviews table and decoding every commit
-    /// message is costly on large histories.
+    /// Read every commit in `range`: a git revision range, or a revset in a jj workspace. `None`
+    /// means `HEAD` for git and `::@` for jj. Only the commits that `keep` accepts get a numstat,
+    /// since diffing is the costly step. Merge commits contribute nothing, matching
+    /// `git log --numstat`'s default, except at the shallow boundary, where a merge counts its
+    /// whole tree.
+    ///
+    /// Reviewers are read only with `reviews`, since they feed only the reviews table and decoding
+    /// every commit message is costly on large histories. They cover every commit in the range,
+    /// whatever `keep` says.
     ///
     /// # Errors
     ///
-    /// Returns an error if the range cannot be resolved or a commit object cannot be read.
-    pub fn walk(&self, range: Option<&str>, need_reviewers: bool) -> Result<Vec<WalkedCommit>> {
-        let mut repo = self.repo.to_thread_local();
-        // The metadata read then reuses the commits that the traversal already decoded.
-        repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
-        let selected = self.revisions.select(&repo, range)?;
-        commits::read(&repo, selected, need_reviewers)
-    }
-
-    /// Compute the numstat of each given commit, paired with that commit's metadata, in the same
-    /// order. Merge commits contribute nothing, matching `git log --numstat`'s default.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a commit's tree or its parent's tree cannot be diffed.
-    pub fn numstats<'a>(
+    /// Returns an error if the range cannot be resolved, a commit object cannot be read, or a
+    /// commit's tree or its parent's tree cannot be diffed.
+    pub fn read(
         &self,
-        commits: &[&'a WalkedCommit],
-    ) -> Result<Vec<(&'a CommitMeta, DiffStat)>> {
-        commits
-            .par_iter()
+        range: Option<&str>,
+        mut keep: impl FnMut(&CommitMeta) -> bool,
+        reviews: bool,
+    ) -> Result<Commits> {
+        // The walk's repository and its object cache drop here, before each diff worker opens its
+        // own.
+        let (kept, reviewers) = {
+            let mut repo = self.repo.to_thread_local();
+            // The metadata read then reuses the commits that the traversal already decoded.
+            repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
+            let selected = self.revisions.select(&repo, range)?;
+            let mut reviewers = reviews.then(Vec::new);
+            let mut kept = Vec::new();
+            for commit in commits::read(&repo, selected, reviews) {
+                let commit = commit?;
+                if let Some(all) = &mut reviewers {
+                    all.push(commit.reviewers);
+                }
+                if keep(&commit.meta) {
+                    kept.push((commit.meta, commit.numstat));
+                }
+            }
+            (kept, reviewers)
+        };
+        let kept = kept
+            .into_par_iter()
             .map_init(
                 || diff::Worker::new(self.repo.to_thread_local(), &self.revisions),
-                |worker, c| Ok((&c.meta, worker.numstat(c)?)),
+                |worker, (meta, numstat)| Ok((meta, worker.numstat(numstat)?)),
             )
-            .collect()
+            .collect::<Result<_>>()?;
+        Ok(Commits { kept, reviewers })
     }
 }
 
