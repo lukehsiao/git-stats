@@ -3,16 +3,34 @@ use std::fmt::Write as _;
 use unicode_width::UnicodeWidthStr;
 use yansi::Paint;
 
-use crate::logic::table::StatsTable;
-use crate::model::{Review, display_add, display_del, display_net};
+use crate::logic::table::{Report, StatsTable};
+use crate::model::Review;
 
-/// Render the per-author stats table, with the Total row last.
+/// Render the report as text: the stats table, then the reviews table after a blank line. A table
+/// with nothing to show is left out, along with its blank line, so the text never opens with one.
+/// Non-empty text ends with exactly one newline; an empty report renders as the empty string.
 ///
-/// Blue comes from the ANSI 16 palette so terminal themes can remap it. Styling
-/// is gated by yansi's global condition, so it is plain text when color is
-/// disabled.
+/// Blue comes from the ANSI 16 palette so terminal themes can remap it. Styling is gated by yansi's
+/// global condition, so it is plain text when color is disabled.
 #[must_use]
-pub fn render_stats(stats: &StatsTable) -> String {
+pub fn report(report: &Report) -> String {
+    let mut out = String::new();
+    if let Some(stats) = &report.stats {
+        out.push_str(&render_stats(stats));
+        out.push('\n');
+    }
+    if !report.reviews.is_empty() {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&render_reviews(&report.reviews));
+        out.push('\n');
+    }
+    out
+}
+
+/// Render the per-author stats table, with the Total row last and in bold blue.
+fn render_stats(stats: &StatsTable) -> String {
     const HEADER: [&str; 6] = [
         "Author",
         "Commits",
@@ -40,10 +58,9 @@ pub fn render_stats(stats: &StatsTable) -> String {
     table(&HEADER, &cells, Emphasis::HeaderAndLastRow)
 }
 
-/// Render the per-reviewer table. For consistency with the stats table, its
-/// header row is bold blue (gated by yansi's global color condition).
-#[must_use]
-pub fn render_reviews(rows: &[Review]) -> String {
+/// Render the per-reviewer table. For consistency with the stats table, its header row is bold
+/// blue.
+fn render_reviews(rows: &[Review]) -> String {
     const HEADER: [&str; 2] = ["Reviewer/Tester", "Commits"];
     let cells: Vec<Vec<String>> = rows
         .iter()
@@ -123,6 +140,32 @@ fn push_cell(out: &mut String, cell: &str, bold: bool) {
         let _ = write!(out, "{}", cell.blue().bold());
     } else {
         out.push_str(cell);
+    }
+}
+
+/// Format a deletion count: `0` stays `0`, otherwise it is shown as `-n`.
+fn display_del(n: u64) -> String {
+    match n {
+        0 => "0".to_string(),
+        n => format!("-{n}"),
+    }
+}
+
+/// Format an insertion count: `0` stays `0`, otherwise it is shown as `+n`.
+fn display_add(n: u64) -> String {
+    match n {
+        0 => "0".to_string(),
+        n => format!("+{n}"),
+    }
+}
+
+/// Format a net line delta: positive values get a leading `+`, zero and negative values render with
+/// their natural sign (`0`, `-5`).
+fn display_net(n: i64) -> String {
+    if n > 0 {
+        format!("+{n}")
+    } else {
+        format!("{n}")
     }
 }
 
@@ -234,5 +277,84 @@ mod tests {
             render_reviews(&rows),
             concat!("Reviewer/Tester  Commits\n", "Ada                    3")
         );
+    }
+
+    /// For any report, the text never opens with a blank line, and non-empty text ends with exactly
+    /// one newline. A blank line separates the tables only when both show, so the reviews table
+    /// alone starts at the top.
+    #[hegel::test]
+    fn report_framing_is_stable(tc: hegel::TestCase) {
+        yansi::disable();
+        let stats = if tc.draw(generators::booleans()) {
+            Some(tc.draw(stats_table().print_as_debug()))
+        } else {
+            None
+        };
+        let n = tc.draw(generators::integers::<u64>().max_value(3));
+        let reviews: Vec<Review> = (0..n)
+            .map(|commits| Review {
+                author: "Rev Iewer".to_string(),
+                commits,
+            })
+            .collect();
+        let both = stats.is_some() && !reviews.is_empty();
+        let reviews_only = stats.is_none() && !reviews.is_empty();
+        let out = report(&Report { stats, reviews });
+
+        assert!(!out.starts_with('\n'), "report opens blank: {out:?}");
+        if !out.is_empty() {
+            assert!(
+                out.ends_with('\n') && !out.ends_with("\n\n"),
+                "report should end with exactly one newline: {out:?}"
+            );
+        }
+        assert_eq!(out.matches("\n\n").count(), usize::from(both), "{out:?}");
+        if reviews_only {
+            assert!(out.starts_with("Reviewer/Tester"), "{out:?}");
+        }
+    }
+
+    #[test]
+    fn an_empty_report_renders_nothing() {
+        let empty = Report {
+            stats: None,
+            reviews: Vec::new(),
+        };
+        assert_eq!(report(&empty), "");
+    }
+
+    #[hegel::test]
+    fn display_add_signs_nonzero(tc: hegel::TestCase) {
+        let n = tc.draw(generators::integers::<u64>());
+        let rendered = display_add(n);
+        if n == 0 {
+            assert_eq!(rendered, "0");
+        } else {
+            assert_eq!(rendered, format!("+{n}"));
+        }
+    }
+
+    #[hegel::test]
+    fn display_del_signs_nonzero(tc: hegel::TestCase) {
+        let n = tc.draw(generators::integers::<u64>());
+        let rendered = display_del(n);
+        if n == 0 {
+            assert_eq!(rendered, "0");
+        } else {
+            assert_eq!(rendered, format!("-{n}"));
+        }
+    }
+
+    /// Across the full `i64` range (including `MIN`, `MAX`, `0`), `display_net` never panics and
+    /// follows its sign rules.
+    #[hegel::test]
+    fn display_net_signs_and_never_panics(tc: hegel::TestCase) {
+        let n = tc.draw(generators::integers::<i64>());
+        let rendered = display_net(n);
+        if n > 0 {
+            assert_eq!(rendered, format!("+{n}"));
+        } else {
+            assert_eq!(rendered, n.to_string());
+        }
     }
 }

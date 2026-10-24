@@ -24,9 +24,8 @@ pub struct Cli {
     /// Show who reviewed/tested commits based on `Acked-by`, `Tested-by`, and
     /// `Reviewed-by` git trailers.
     reviews: bool,
-    /// What column to sort the stats table by. Names sort by byte value, so
-    /// uppercase comes before lowercase. The reviewers table always sorts by
-    /// commits.
+    /// What column to sort the stats table by. Names sort by byte value, so uppercase comes before
+    /// lowercase. The reviewers table always sorts by commits.
     #[arg(short, long, value_enum, default_value_t = SortBy::Commits)]
     sort: SortBy,
     /// Reverse the sort order of the stats table: counts ascending, authors Z to A

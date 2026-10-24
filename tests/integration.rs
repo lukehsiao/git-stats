@@ -4,67 +4,14 @@
 
 use std::fmt::Write as _;
 use std::io::{Read as _, Write as _};
-use std::path::Path;
 use std::process::{Command, Stdio};
 
 use git_stats::app;
-use git_stats::model::{Options, SortBy, Vcs};
+use git_stats::model::Vcs;
 use git_stats::repo::Repo;
 
-fn git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .current_dir(dir)
-        .args(args)
-        // Ignore host config so commit creation is hermetic (no gpgsign, etc.).
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_SYSTEM", "/dev/null")
-        .status()
-        .expect("git should be installed");
-    assert!(status.success(), "git {args:?} failed");
-}
-
-/// Like [`git`], but capture and return trimmed stdout.
-fn git_out(dir: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .current_dir(dir)
-        .args(args)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_SYSTEM", "/dev/null")
-        .output()
-        .expect("git should be installed");
-    assert!(out.status.success(), "git {args:?} failed");
-    String::from_utf8(out.stdout).unwrap().trim().to_string()
-}
-
-fn options(range: &str, reviews: bool) -> Options {
-    Options {
-        range: Some(range.to_string()),
-        email: false,
-        reviews,
-        sort: SortBy::Commits,
-        reverse: false,
-        authors: Vec::new(),
-        since: None,
-        until: None,
-    }
-}
-
-fn row<'a>(out: &'a str, label: &str) -> &'a str {
-    out.lines()
-        .find(|l| l.trim_start().starts_with(label))
-        .unwrap_or_else(|| panic!("no row starting with {label:?} in:\n{out}"))
-}
-
-/// Run with color disabled so assertions see plain text.
-fn report(repo: &Repo, opts: &Options) -> String {
-    yansi::disable();
-    app::run(repo, opts).unwrap()
-}
-
-/// Whether a usable `git` binary is on PATH; tests skip gracefully without one.
-fn git_available() -> bool {
-    Command::new("git").arg("--version").output().is_ok()
-}
+mod common;
+use common::{author, counts, git, git_available, options, report, reviewer, total};
 
 #[test]
 fn reads_a_real_repository() {
@@ -100,13 +47,14 @@ fn reads_a_real_repository() {
     let repo = Repo::open(p, Vcs::Git).unwrap();
     // Control for the shallow-clone probe: a full repository must not warn.
     assert!(!repo.is_shallow(), "full repository detected as shallow");
-    let out = report(&repo, &options("HEAD", true));
+    let mut opts = options(Some("HEAD"));
+    opts.reviews = true;
+    let r = report(&repo, &opts);
 
     // Ada: 2 commits; root adds 2 lines, the follow-up adds 1, so +3 insertions.
-    let ada = row(&out, "Ada");
-    assert!(ada.contains("+3"), "ada row: {ada}");
+    assert_eq!(author(&r, "Ada").insertions, 3, "{r:#?}");
     // The Reviewed-by trailer surfaces in the reviews table.
-    assert!(out.contains("Rev Iewer"), "reviews missing:\n{out}");
+    assert_eq!(reviewer(&r, "Rev Iewer").commits, 1, "{r:#?}");
 }
 
 #[test]
@@ -137,14 +85,13 @@ fn range_excludes_commits_on_the_excluded_side() {
     git(p, &["commit", "-q", "-m", "feature 2"]);
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    let out = report(&repo, &options("main..feature", false));
+    let r = report(&repo, &options(Some("main..feature")));
 
     // `main..feature` excludes the base commit, leaving exactly the 2 feature commits.
-    let total = row(&out, "Total");
     assert_eq!(
-        total.split_whitespace().nth(1),
-        Some("2"),
-        "main..feature should count only the 2 feature commits:\n{out}"
+        total(&r).commits,
+        2,
+        "main..feature should count only the 2 feature commits:\n{r:#?}"
     );
 }
 
@@ -179,14 +126,13 @@ fn symmetric_difference_range_excludes_the_common_ancestor() {
     git(p, &["commit", "-q", "-m", "main only"]);
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    let out = report(&repo, &options("main...feature", false));
+    let r = report(&repo, &options(Some("main...feature")));
 
     // The symmetric difference drops the shared base, leaving the 2 divergent commits.
-    let total = row(&out, "Total");
     assert_eq!(
-        total.split_whitespace().nth(1),
-        Some("2"),
-        "main...feature should count the 2 divergent commits:\n{out}"
+        total(&r).commits,
+        2,
+        "main...feature should count the 2 divergent commits:\n{r:#?}"
     );
 }
 
@@ -228,14 +174,14 @@ fn symmetric_difference_hides_every_merge_base() {
     git(p, &["merge", "-q", "--no-ff", "--no-edit", "a-tip"]);
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    let out = report(&repo, &options("br-a...br-b", false));
+    let r = report(&repo, &options(Some("br-a...br-b")));
 
     // git rev-list --count br-a...br-b is 2: only the two cross merges.
     // Hiding just one merge base leaks the other into the count (3 commits).
     assert_eq!(
-        total_commits(&out),
-        Some("2"),
-        "criss-cross merge bases must all be hidden:\n{out}"
+        total(&r).commits,
+        2,
+        "criss-cross merge bases must all be hidden:\n{r:#?}"
     );
 }
 
@@ -261,10 +207,6 @@ fn tag_fixture() -> (tempfile::TempDir, Repo) {
     (dir, repo)
 }
 
-fn total_commits(out: &str) -> Option<&str> {
-    row(out, "Total").split_whitespace().nth(1)
-}
-
 #[test]
 fn lightweight_tag_range_is_unaffected() {
     if !git_available() {
@@ -273,12 +215,12 @@ fn lightweight_tag_range_is_unaffected() {
     }
 
     let (_dir, repo) = tag_fixture();
-    let out = report(&repo, &options("lightweight..HEAD", false));
+    let r = report(&repo, &options(Some("lightweight..HEAD")));
 
     assert_eq!(
-        total_commits(&out),
-        Some("1"),
-        "lightweight..HEAD should count only the commit after the tag:\n{out}"
+        total(&r).commits,
+        1,
+        "lightweight..HEAD should count only the commit after the tag:\n{r:#?}"
     );
 }
 
@@ -290,15 +232,15 @@ fn annotated_tag_range_excludes_commits_behind_the_tag() {
     }
 
     let (_dir, repo) = tag_fixture();
-    let out = report(&repo, &options("annotated..HEAD", false));
+    let r = report(&repo, &options(Some("annotated..HEAD")));
 
     // The tag object must be peeled to its commit before going into the hidden
     // set; an unpeeled tag OID matches nothing and the range silently degrades
     // to whole-repo history (3 commits here).
     assert_eq!(
-        total_commits(&out),
-        Some("1"),
-        "annotated..HEAD should count only the commit after the tag:\n{out}"
+        total(&r).commits,
+        1,
+        "annotated..HEAD should count only the commit after the tag:\n{r:#?}"
     );
 }
 
@@ -310,12 +252,12 @@ fn annotated_tag_on_the_inclusion_side_resolves() {
     }
 
     let (_dir, repo) = tag_fixture();
-    let out = report(&repo, &options("HEAD~2..annotated", false));
+    let r = report(&repo, &options(Some("HEAD~2..annotated")));
 
     assert_eq!(
-        total_commits(&out),
-        Some("1"),
-        "HEAD~2..annotated should count only the tagged commit:\n{out}"
+        total(&r).commits,
+        1,
+        "HEAD~2..annotated should count only the tagged commit:\n{r:#?}"
     );
 }
 
@@ -327,13 +269,13 @@ fn a_bare_annotated_tag_resolves_to_its_target_commit() {
     }
 
     let (dir, repo) = tag_fixture();
-    let out = report(&repo, &options("annotated", false));
+    let r = report(&repo, &options(Some("annotated")));
 
     // The tag points at the second of three commits, so its history is 2 deep.
     assert_eq!(
-        total_commits(&out),
-        Some("2"),
-        "a bare annotated tag should walk from its target commit:\n{out}"
+        total(&r).commits,
+        2,
+        "a bare annotated tag should walk from its target commit:\n{r:#?}"
     );
 
     // git peels tags recursively, so a tag pointing at another tag must
@@ -342,11 +284,11 @@ fn a_bare_annotated_tag_resolves_to_its_target_commit() {
         dir.path(),
         &["tag", "-a", "-m", "wrap", "nested", "annotated"],
     );
-    let out = report(&repo, &options("nested", false));
+    let r = report(&repo, &options(Some("nested")));
     assert_eq!(
-        total_commits(&out),
-        Some("2"),
-        "a tag-to-tag chain should peel to the same commit:\n{out}"
+        total(&r).commits,
+        2,
+        "a tag-to-tag chain should peel to the same commit:\n{r:#?}"
     );
 }
 
@@ -381,12 +323,12 @@ fn symmetric_difference_with_an_annotated_tag_resolves() {
     let repo = Repo::open(p, Vcs::Git).unwrap();
     // Unlike the two-dot tests, `...` also feeds the endpoints to the
     // merge-base computation, which needs commit OIDs rather than tag OIDs.
-    let out = report(&repo, &options("main...feature-tag", false));
+    let r = report(&repo, &options(Some("main...feature-tag")));
 
     assert_eq!(
-        total_commits(&out),
-        Some("2"),
-        "main...feature-tag should count the 2 divergent commits:\n{out}"
+        total(&r).commits,
+        2,
+        "main...feature-tag should count the 2 divergent commits:\n{r:#?}"
     );
 }
 
@@ -407,7 +349,7 @@ fn filter_validation_precedes_the_walk() {
     git(p, &["commit", "-q", "-m", "base"]);
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    let mut opts = options("no-such-ref..HEAD", false);
+    let mut opts = options(Some("no-such-ref..HEAD"));
     opts.since = Some("not-a-date".to_string());
 
     // Both the range and the date are bad. The date must win: filters are
@@ -442,17 +384,10 @@ fn binary_file_changes_count_as_changed_files() {
     git(p, &["commit", "-q", "-m", "add text and binary"]);
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    let out = report(&repo, &options("HEAD", false));
+    let r = report(&repo, &options(Some("HEAD")));
 
-    let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
-    assert_eq!(
-        cols[2], "2",
-        "the binary file should count as a changed file:\n{out}"
-    );
-    assert_eq!(
-        cols[3], "+2",
-        "only the text file should contribute lines:\n{out}"
-    );
+    // The binary file counts as a changed file; only the text file contributes lines.
+    assert_eq!(counts(total(&r)), (1, 2, 2, 0, 2), "{r:#?}");
 }
 
 /// `git stats | head` style usage closes stdout before the report is fully
@@ -606,23 +541,26 @@ fn mailmap_folds_identities_like_git_shortlog() {
     git(p, &["commit", "-q", "-m", "untouched author"]);
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    let mut opts = options("HEAD", false);
+    let mut opts = options(Some("HEAD"));
     opts.email = true;
-    let out = report(&repo, &opts);
+    let r = report(&repo, &opts);
 
-    let new = row(&out, "New Name <new@example.com>");
     assert_eq!(
-        new.split_whitespace().nth(3),
-        Some("2"),
-        "both old-identity commits should fold into the mapped one:\n{out}"
+        author(&r, "New Name <new@example.com>").commits,
+        2,
+        "both old-identity commits should fold into the mapped one:\n{r:#?}"
     );
-    assert!(
-        !out.contains("old@example.com"),
-        "unmapped identity leaked:\n{out}"
-    );
-    assert!(
-        out.contains("Other <other@example.com>"),
-        "unmapped author should pass through:\n{out}"
+    let keys: Vec<&str> = r
+        .stats
+        .iter()
+        .flat_map(|t| &t.rows)
+        .map(|s| s.author.as_str())
+        .collect();
+    // The old identity must not leak into any row, and the unmapped author passes through.
+    assert_eq!(
+        keys,
+        ["New Name <new@example.com>", "Other <other@example.com>"],
+        "{r:#?}"
     );
 }
 
@@ -643,11 +581,11 @@ fn submodule_changes_count_like_git_numstat() {
     std::fs::write(inner.join("x.txt"), "x\n").unwrap();
     git(&inner, &["add", "."]);
     git(&inner, &["commit", "-q", "-m", "inner 1"]);
-    let sha1 = git_out(&inner, &["rev-parse", "HEAD"]);
+    let sha1 = git(&inner, &["rev-parse", "HEAD"]);
     std::fs::write(inner.join("y.txt"), "y\n").unwrap();
     git(&inner, &["add", "."]);
     git(&inner, &["commit", "-q", "-m", "inner 2"]);
-    let sha2 = git_out(&inner, &["rev-parse", "HEAD"]);
+    let sha2 = git(&inner, &["rev-parse", "HEAD"]);
 
     // Gitlink entries via plumbing keep the fixture hermetic: no .gitmodules,
     // no clone, just a tree entry of mode 160000 pointing at the inner commits.
@@ -667,18 +605,12 @@ fn submodule_changes_count_like_git_numstat() {
     git(&outer, &["commit", "-q", "-m", "bump sub"]);
 
     let repo = Repo::open(&outer, Vcs::Git).unwrap();
-    let out = report(&repo, &options("HEAD", false));
+    let r = report(&repo, &options(Some("HEAD")));
 
     // git log --numstat: base is `1 0 r.txt`, adding the gitlink is `1 0 sub`
     // (one "Subproject commit" line), repointing it is `1 1 sub`. Totals:
     // 3 files, +3, -1.
-    let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
-    assert_eq!(
-        cols[2], "3",
-        "gitlink changes should count as changed files:\n{out}"
-    );
-    assert_eq!(cols[3], "+3", "expected +3 insertions:\n{out}");
-    assert_eq!(cols[4], "-1", "expected -1 deletions:\n{out}");
+    assert_eq!(counts(total(&r)), (3, 3, 3, 1, 2), "{r:#?}");
 }
 
 /// A renamed submodule is paired by the rename tracker into git's single
@@ -701,7 +633,7 @@ fn gitlink_renames_count_as_one_unchanged_file() {
     std::fs::write(inner.join("x.txt"), "x\n").unwrap();
     git(&inner, &["add", "."]);
     git(&inner, &["commit", "-q", "-m", "inner"]);
-    let sha = git_out(&inner, &["rev-parse", "HEAD"]);
+    let sha = git(&inner, &["rev-parse", "HEAD"]);
 
     let outer = p.join("outer");
     std::fs::create_dir(&outer).unwrap();
@@ -723,14 +655,11 @@ fn gitlink_renames_count_as_one_unchanged_file() {
     git(&outer, &["commit", "-q", "-m", "rename sub"]);
 
     let repo = Repo::open(&outer, Vcs::Git).unwrap();
-    let out = report(&repo, &options("HEAD", false));
+    let r = report(&repo, &options(Some("HEAD")));
 
     // base is 1 file +1, adding the gitlink is 1 file +1, and the rename is
     // 1 file whose `Subproject commit` line is unchanged.
-    let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
-    assert_eq!(cols[2], "3", "rename should count as one file:\n{out}");
-    assert_eq!(cols[3], "+2", "expected +2 insertions:\n{out}");
-    assert_eq!(cols[4], "0", "expected no deletions:\n{out}");
+    assert_eq!(counts(total(&r)), (3, 3, 2, 0, 2), "{r:#?}");
 }
 
 #[test]
@@ -767,15 +696,19 @@ fn shallow_clones_treat_boundary_commits_as_parentless() {
     // The binary warns on shallow clones via this probe; the full-clone
     // control lives in `reads_a_real_repository`.
     assert!(repo.is_shallow(), "depth-2 clone should detect as shallow");
-    let out = report(&repo, &options("HEAD", false));
+    let r = report(&repo, &options(Some("HEAD")));
 
     // git log --numstat here shows c3 as +1 and the boundary commit c2 as its
     // whole tree (+2), exactly like a root commit, so the total is +3.
-    let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
-    assert_eq!(cols[1], "2", "both retained commits should count:\n{out}");
     assert_eq!(
-        cols[3], "+3",
-        "the boundary commit should diff against the empty tree:\n{out}"
+        total(&r).commits,
+        2,
+        "both retained commits should count:\n{r:#?}"
+    );
+    assert_eq!(
+        total(&r).insertions,
+        3,
+        "the boundary commit should diff against the empty tree:\n{r:#?}"
     );
 }
 
@@ -820,15 +753,23 @@ fn shallow_boundary_merges_diff_like_root_commits() {
     git(p, &["clone", "-q", "--depth", "2", &url, "shallow"]);
 
     let repo = Repo::open(p.join("shallow"), Vcs::Git).unwrap();
-    let out = report(&repo, &options("HEAD", false));
+    let r = report(&repo, &options(Some("HEAD")));
 
-    let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
-    assert_eq!(cols[1], "2", "both retained commits should count:\n{out}");
     assert_eq!(
-        cols[2], "4",
-        "the grafted merge should contribute its whole tree:\n{out}"
+        total(&r).commits,
+        2,
+        "both retained commits should count:\n{r:#?}"
     );
-    assert_eq!(cols[3], "+4", "expected +4 total insertions:\n{out}");
+    assert_eq!(
+        total(&r).num_files,
+        4,
+        "the grafted merge should contribute its whole tree:\n{r:#?}"
+    );
+    assert_eq!(
+        total(&r).insertions,
+        4,
+        "expected +4 total insertions:\n{r:#?}"
+    );
 }
 
 /// A commit whose header git itself would never write (non-numeric committer
@@ -857,14 +798,14 @@ fn decode_failures_name_the_offending_commit() {
     git(p, &["add", "."]);
     git(p, &["commit", "-q", "-m", "good"]);
 
-    let tree = git_out(p, &["rev-parse", "HEAD^{tree}"]);
-    let parent = git_out(p, &["rev-parse", "HEAD"]);
+    let tree = git(p, &["rev-parse", "HEAD^{tree}"]);
+    let parent = git(p, &["rev-parse", "HEAD"]);
     let raw = format!(
         "tree {tree}\nparent {parent}\nauthor Ada <ada@x> not-a-timestamp\n\
          committer Ada <ada@x> not-a-timestamp\n\nbad date\n"
     );
     std::fs::write(p.join("raw-commit"), &raw).unwrap();
-    let bad = git_out(
+    let bad = git(
         p,
         &[
             "hash-object",
@@ -879,7 +820,7 @@ fn decode_failures_name_the_offending_commit() {
     git(p, &["commit-graph", "write", "--reachable"]);
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    let err = app::run(&repo, &options("HEAD", false)).unwrap_err();
+    let err = app::run(&repo, &options(Some("HEAD"))).unwrap_err();
     assert!(
         err.to_string().contains(&bad),
         "error should name the undecodable commit {bad}: {err}"
@@ -916,14 +857,18 @@ fn merge_commits_are_counted_but_add_no_lines() {
     git(p, &["merge", "--no-ff", "--no-edit", "feature"]);
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    let out = report(&repo, &options("HEAD", false));
+    let r = report(&repo, &options(Some("HEAD")));
 
     // Four commits (base, feature, main, merge); the merge contributes no lines,
     // so insertions total only the three single-line file additions.
-    let cols: Vec<&str> = row(&out, "Total").split_whitespace().collect();
-    assert_eq!(cols[1], "4", "merge commit should be counted:\n{out}");
     assert_eq!(
-        cols[3], "+3",
-        "merge should contribute no insertions:\n{out}"
+        total(&r).commits,
+        4,
+        "merge commit should be counted:\n{r:#?}"
+    );
+    assert_eq!(
+        total(&r).insertions,
+        3,
+        "merge should contribute no insertions:\n{r:#?}"
     );
 }

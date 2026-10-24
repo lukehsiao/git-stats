@@ -1,10 +1,13 @@
 //! Application-level tests driven by a nulled [`Repo`]. They exercise the real
 //! logic and coordination code end to end, with only the gix I/O neutralized.
 
+mod common;
+
 use git_stats::app;
-use git_stats::model::{Author, CommitMeta, DiffStat, Options, SortBy, Trailer};
+use git_stats::model::{Author, CommitMeta, DiffStat, Options, Trailer};
 use git_stats::repo::{NulledCommit, Repo};
-use hegel::generators;
+
+use common::{author, counts, has_author, options, report, reviewer, total};
 
 fn commit(name: &str, email: &str, time: i64, diff: DiffStat) -> NulledCommit {
     NulledCommit {
@@ -29,31 +32,11 @@ fn diff(insertions: u64, deletions: u64, files: u64) -> DiffStat {
     }
 }
 
-fn options() -> Options {
-    Options {
-        range: None,
-        email: false,
-        reviews: false,
-        sort: SortBy::Commits,
-        reverse: false,
-        authors: Vec::new(),
-        since: None,
-        until: None,
+fn trailer(token: &str, value: &str) -> Trailer {
+    Trailer {
+        token: token.to_string(),
+        value: value.to_string(),
     }
-}
-
-/// Run with color disabled, mirroring the plain output a non-tty (e.g. a pipe)
-/// receives, so assertions see stable text.
-fn report(repo: &Repo, opts: &Options) -> String {
-    yansi::disable();
-    app::run(repo, opts).unwrap()
-}
-
-/// The output line for a given leading label (an author or "Total").
-fn row<'a>(out: &'a str, label: &str) -> &'a str {
-    out.lines()
-        .find(|l| l.trim_start().starts_with(label))
-        .unwrap_or_else(|| panic!("no row starting with {label:?} in:\n{out}"))
 }
 
 /// Three commits across two authors (with spaces in their names), used by the
@@ -68,24 +51,19 @@ fn two_author_repo() -> Repo {
 
 #[test]
 fn sums_per_author_insertions_deletions_and_net() {
-    let out = report(&two_author_repo(), &options());
-    // Ada Lovelace: 2 commits, 4 files, +15 / -7, net +8.
-    let ada = row(&out, "Ada Lovelace");
-    assert!(
-        ada.contains("+15") && ada.contains("-7") && ada.contains("+8"),
-        "ada row should show +15 / -7 / +8: {ada}"
+    let r = report(&two_author_repo(), &options(None));
+    assert_eq!(
+        counts(author(&r, "Ada Lovelace")),
+        (2, 4, 15, 7, 8),
+        "{r:#?}"
     );
+    assert_eq!(counts(author(&r, "Bob Ross")), (1, 1, 1, 0, 1), "{r:#?}");
 }
 
 #[test]
-fn appends_a_total_row_over_all_authors() {
-    let out = report(&two_author_repo(), &options());
-    // Total: 3 commits, +16 / -7, net +9.
-    let total = row(&out, "Total");
-    assert!(
-        total.contains("+16") && total.contains("+9"),
-        "total row should show +16 insertions and +9 net: {total}"
-    );
+fn totals_cover_all_authors() {
+    let r = report(&two_author_repo(), &options(None));
+    assert_eq!(counts(total(&r)), (3, 5, 16, 7, 9), "{r:#?}");
 }
 
 #[test]
@@ -95,14 +73,17 @@ fn since_filters_out_older_commits() {
         commit("Olda", "olda@x", 1_577_836_800, diff(1, 0, 1)),
         commit("Newman", "newman@x", 1_704_067_200, diff(1, 0, 1)),
     ]);
-    let mut opts = options();
+    let mut opts = options(None);
     opts.since = Some("2022-01-01".to_string());
 
-    let out = report(&repo, &opts);
-    assert!(out.contains("Newman"), "newer commit should remain:\n{out}");
+    let r = report(&repo, &opts);
     assert!(
-        !out.contains("Olda"),
-        "older commit should be filtered:\n{out}"
+        has_author(&r, "Newman"),
+        "newer commit should remain: {r:#?}"
+    );
+    assert!(
+        !has_author(&r, "Olda"),
+        "older commit should be filtered: {r:#?}"
     );
 }
 
@@ -112,30 +93,33 @@ fn author_filter_keeps_only_matching_authors() {
         commit("Alice", "alice@x", 100, diff(1, 0, 1)),
         commit("Bob", "bob@x", 200, diff(1, 0, 1)),
     ]);
-    let mut opts = options();
+    let mut opts = options(None);
     opts.authors = vec!["Alice".to_string()];
 
-    let out = report(&repo, &opts);
+    let r = report(&repo, &opts);
     assert!(
-        out.contains("Alice"),
-        "matching author should remain:\n{out}"
+        has_author(&r, "Alice"),
+        "matching author should remain: {r:#?}"
     );
     assert!(
-        !out.contains("Bob"),
-        "non-matching author should be gone:\n{out}"
+        !has_author(&r, "Bob"),
+        "non-matching author should be gone: {r:#?}"
     );
 }
 
 #[test]
-fn empty_repo_renders_nothing() {
-    let repo = Repo::create_null(vec![]);
-    assert_eq!(report(&repo, &options()), "");
+fn empty_repo_has_nothing_to_show() {
+    let mut opts = options(None);
+    opts.reviews = true;
+    let r = report(&Repo::create_null(vec![]), &opts);
+    assert_eq!(r.stats, None);
+    assert!(r.reviews.is_empty(), "{r:#?}");
 }
 
 #[test]
 fn invalid_author_pattern_is_a_typed_error() {
     let repo = Repo::create_null(vec![commit("Ada", "ada@x", 100, diff(1, 0, 1))]);
-    let mut opts = options();
+    let mut opts = options(None);
     opts.authors = vec!["[".to_string()];
 
     let err = app::run(&repo, &opts).unwrap_err();
@@ -151,16 +135,9 @@ fn merge_commits_count_but_contribute_no_lines() {
     merge.is_merge = true;
     let repo = Repo::create_null(vec![merge, commit("Ada", "ada@x", 200, diff(4, 1, 2))]);
 
-    let out = report(&repo, &options());
-    let ada = row(&out, "Ada");
-    // Only the non-merge contributes lines: +4 / -1, net +3.
-    assert!(ada.contains("+4"), "ada row: {ada}");
-    assert!(ada.contains("-1"), "ada row: {ada}");
-    assert!(ada.contains("+3"), "ada row: {ada}");
-    assert!(
-        !out.contains("999"),
-        "merge stats leaked into output:\n{out}"
-    );
+    let r = report(&repo, &options(None));
+    // Both commits count, but only the non-merge contributes files and lines.
+    assert_eq!(counts(author(&r, "Ada")), (2, 2, 4, 1, 3), "{r:#?}");
 }
 
 #[test]
@@ -171,112 +148,61 @@ fn email_flag_splits_same_name_distinct_emails() {
     ];
 
     // Without --email, the two identities collapse into one "Luke" row.
-    let merged = report(&Repo::create_null(commits.clone()), &options());
-    assert!(row(&merged, "Luke").contains("+3"), "merged: {merged}");
-    assert!(
-        !merged.contains("luke@a"),
-        "email leaked without flag: {merged}"
-    );
+    let merged = report(&Repo::create_null(commits.clone()), &options(None));
+    assert_eq!(merged.stats.as_ref().unwrap().rows.len(), 1, "{merged:#?}");
+    assert_eq!(author(&merged, "Luke").insertions, 3, "{merged:#?}");
 
     // With --email, they become two rows keyed by `Name <email>`.
-    let mut with_email = options();
+    let mut with_email = options(None);
     with_email.email = true;
     let split = report(&Repo::create_null(commits), &with_email);
-    assert!(split.contains("luke@a"), "split: {split}");
-    assert!(split.contains("luke@b"), "split: {split}");
+    assert_eq!(author(&split, "Luke <luke@a>").insertions, 1, "{split:#?}");
+    assert_eq!(author(&split, "Luke <luke@b>").insertions, 2, "{split:#?}");
 }
 
 #[test]
 fn reviews_credit_a_reviewer_once_per_commit() {
     let mut reviewed = commit("Ada", "ada@x", 100, diff(1, 0, 1));
     reviewed.meta.trailers = vec![
-        Trailer {
-            token: "Reviewed-by".to_string(),
-            value: "Rev Iewer <rev@x>".to_string(),
-        },
-        Trailer {
-            token: "Tested-by".to_string(),
-            value: "Rev Iewer <rev@x>".to_string(),
-        },
+        trailer("Reviewed-by", "Rev Iewer <rev@x>"),
+        trailer("Tested-by", "Rev Iewer <rev@x>"),
         // Not a review/test trailer; must be ignored.
-        Trailer {
-            token: "Signed-off-by".to_string(),
-            value: "Sole Author <sole@x>".to_string(),
-        },
+        trailer("Signed-off-by", "Sole Author <sole@x>"),
     ];
 
-    let mut with_reviews = options();
+    let mut with_reviews = options(None);
     with_reviews.reviews = true;
-    let out = report(&Repo::create_null(vec![reviewed]), &with_reviews);
+    let r = report(&Repo::create_null(vec![reviewed]), &with_reviews);
 
-    assert!(out.contains("Reviewer/Tester"), "no reviews table:\n{out}");
-    // Two matching trailers on one commit still credit the reviewer once.
-    let rev = row(&out, "Rev Iewer");
-    assert_eq!(rev.split_whitespace().last(), Some("1"), "rev row: {rev}");
-    // The Signed-off-by trailer is not a review token, so it is not counted.
-    assert!(
-        !out.contains("Sole Author"),
-        "non-review trailer leaked:\n{out}"
-    );
+    // Two matching trailers on one commit still credit the reviewer once, and the Signed-off-by
+    // trailer is not a review token, so it is not counted.
+    assert_eq!(r.reviews.len(), 1, "{r:#?}");
+    assert_eq!(reviewer(&r, "Rev Iewer").commits, 1, "{r:#?}");
 }
 
 #[test]
-fn reviews_alone_render_without_a_leading_blank_line() {
-    // Reviews ignore the author filter by design, so a filter that matches
-    // nothing empties the stats table while the reviews table still renders.
+fn reviews_ignore_the_author_and_date_filters() {
     let mut reviewed = commit("Ada", "ada@x", 100, diff(1, 0, 1));
-    reviewed.meta.trailers = vec![Trailer {
-        token: "Reviewed-by".to_string(),
-        value: "Rev Iewer <rev@x>".to_string(),
-    }];
-    let mut opts = options();
+    reviewed.meta.trailers = vec![trailer("Reviewed-by", "Rev Iewer <rev@x>")];
+    let mut opts = options(None);
     opts.reviews = true;
     opts.authors = vec!["matches-nobody".to_string()];
+    opts.since = Some("2022-01-01".to_string());
 
-    let out = report(&Repo::create_null(vec![reviewed]), &opts);
+    let r = report(&Repo::create_null(vec![reviewed]), &opts);
 
-    assert!(
-        out.starts_with("Reviewer/Tester"),
-        "reviews table should start at the first line:\n{out:?}"
-    );
+    assert_eq!(r.stats, None, "{r:#?}");
+    assert_eq!(reviewer(&r, "Rev Iewer").commits, 1, "{r:#?}");
 }
 
-/// For any commit set and display options, the report never opens with a
-/// blank line, and a non-empty report ends with exactly one newline. The
-/// separator between the stats and reviews tables must only appear when both
-/// render; the nulled [`Repo`] lets the property cover the whole app layer.
-#[hegel::test]
-fn report_framing_is_stable(tc: hegel::TestCase) {
-    let n = tc.draw(generators::integers::<usize>().max_value(8));
-    let mut commits = Vec::with_capacity(n);
-    for _ in 0..n {
-        let who = tc.draw(generators::sampled_from(vec!["Ada Lovelace", "Bob"]));
-        let mut c = commit(who, "x@x", 100, diff(1, 0, 1));
-        if tc.draw(generators::booleans()) {
-            c.meta.trailers = vec![Trailer {
-                token: "Reviewed-by".to_string(),
-                value: "Rev Iewer <rev@x>".to_string(),
-            }];
-        }
-        commits.push(c);
-    }
-    let mut opts = options();
-    opts.reviews = tc.draw(generators::booleans());
-    opts.email = tc.draw(generators::booleans());
-    // Sometimes filter every commit out, so only the reviews table renders.
-    if tc.draw(generators::booleans()) {
-        opts.authors = vec!["matches-nobody".to_string()];
-    }
+#[test]
+fn reviews_are_left_out_unless_requested() {
+    let mut reviewed = commit("Ada", "ada@x", 100, diff(1, 0, 1));
+    reviewed.meta.trailers = vec![trailer("Reviewed-by", "Rev Iewer <rev@x>")];
 
-    let out = report(&Repo::create_null(commits), &opts);
+    let r = report(&Repo::create_null(vec![reviewed]), &options(None));
 
-    assert!(!out.starts_with('\n'), "report opens blank: {out:?}");
-    if !out.is_empty() {
-        assert!(
-            out.ends_with('\n') && !out.ends_with("\n\n"),
-            "report should end with exactly one newline: {out:?}"
-        );
-    }
+    assert!(r.reviews.is_empty(), "{r:#?}");
 }
 
 #[test]
@@ -286,20 +212,20 @@ fn reverse_flips_sort_order() {
         commit("Ada", "ada@x", 200, diff(1, 0, 1)),
         commit("Bob", "bob@x", 300, diff(1, 0, 1)),
     ]);
+    let names = |opts: &Options| -> Vec<String> {
+        let r = report(&repo, opts);
+        r.stats
+            .unwrap()
+            .rows
+            .into_iter()
+            .map(|s| s.author)
+            .collect()
+    };
 
     // Descending by commits: Ada (2) precedes Bob (1).
-    let desc = report(&repo, &options());
-    assert!(
-        desc.find("Ada").unwrap() < desc.find("Bob").unwrap(),
-        "descending order wrong:\n{desc}"
-    );
+    assert_eq!(names(&options(None)), ["Ada", "Bob"]);
 
-    // Reversed: Bob precedes Ada (the Total row is still appended last).
-    let mut reversed = options();
+    let mut reversed = options(None);
     reversed.reverse = true;
-    let asc = report(&repo, &reversed);
-    assert!(
-        asc.find("Bob").unwrap() < asc.find("Ada").unwrap(),
-        "reverse failed:\n{asc}"
-    );
+    assert_eq!(names(&reversed), ["Bob", "Ada"]);
 }
