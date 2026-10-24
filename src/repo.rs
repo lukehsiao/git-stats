@@ -156,9 +156,9 @@ impl Repo {
     }
 
     /// Read commit metadata for every commit in `range`: a git revision range, or a revset in a jj
-    /// workspace. `None` means `HEAD` for git and `::@` for jj. Reviewers are parsed only when
+    /// workspace. `None` means `HEAD` for git and `::@` for jj. Reviewers are read only when
     /// `need_reviewers` is set, since they feed only the reviews table and decoding every commit
-    /// message is costly on large histories.
+    /// message is costly on large histories. A nulled repository drops its canned reviewers too.
     ///
     /// # Errors
     ///
@@ -182,22 +182,31 @@ impl Repo {
             }
             Backend::Null(commits) => Ok(commits
                 .iter()
-                .map(|c| WalkedCommit {
-                    meta: c.meta.clone(),
-                    is_merge: c.is_merge,
-                    handle: Handle::Known(c.diff),
+                .map(|c| {
+                    let mut meta = c.meta.clone();
+                    if !need_reviewers {
+                        meta.reviewers.clear();
+                    }
+                    WalkedCommit {
+                        meta,
+                        is_merge: c.is_merge,
+                        handle: Handle::Known(c.diff),
+                    }
                 })
                 .collect()),
         }
     }
 
-    /// Compute the numstat for each given commit. Merge commits contribute nothing, matching `git
-    /// log --numstat`'s default.
+    /// Compute the numstat of each given commit, paired with that commit's metadata, in the same
+    /// order. Merge commits contribute nothing, matching `git log --numstat`'s default.
     ///
     /// # Errors
     ///
     /// Returns an error if a commit's tree or its parent's tree cannot be diffed.
-    pub fn numstats(&self, commits: &[&WalkedCommit]) -> Result<Vec<DiffStat>> {
+    pub fn numstats<'a>(
+        &self,
+        commits: &[&'a WalkedCommit],
+    ) -> Result<Vec<(&'a CommitMeta, DiffStat)>> {
         match &self.backend {
             Backend::Real {
                 repo: tsr,
@@ -206,15 +215,18 @@ impl Repo {
                 .par_iter()
                 .map_init(
                     || Worker::new(tsr.to_thread_local(), revisions),
-                    |worker, c| worker.numstat(c),
+                    |worker, c| Ok((&c.meta, worker.numstat(c)?)),
                 )
                 .collect(),
             Backend::Null(_) => Ok(commits
                 .iter()
-                .map(|c| match c.numstat_source() {
-                    Handle::Known(diff) => diff,
-                    // A nulled repository yields only known numstats.
-                    Handle::Diff(_) => DiffStat::default(),
+                .map(|c| {
+                    let diff = match c.numstat_source() {
+                        Handle::Known(diff) => diff,
+                        // A nulled repository yields only known numstats.
+                        Handle::Diff(_) => DiffStat::default(),
+                    };
+                    (&c.meta, diff)
                 })
                 .collect()),
         }

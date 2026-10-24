@@ -2,10 +2,8 @@
 //! repository, transforming with pure logic, and reading again for numstats. It returns the report
 //! as data; rendering it is the caller's choice.
 
-use regex::Regex;
-
 use crate::error::Result;
-use crate::logic::filter;
+use crate::logic::filter::CommitFilter;
 use crate::logic::table::{self, Report, StatsTable};
 use crate::model::Options;
 use crate::repo::{self, Repo, WalkedCommit};
@@ -19,14 +17,14 @@ use crate::repo::{self, Repo, WalkedCommit};
 pub fn run(repo: &Repo, opts: &Options) -> Result<Report> {
     // PROCESS: validate the filters first. They are cheap to compile, and a typo'd pattern or date
     // should error immediately, not after a walk that can take minutes on a large history.
-    let authors = filter::compile_authors(&opts.authors)?;
     let since = repo::parse_date(opts.since.as_deref())?;
     let until = repo::parse_date(opts.until.as_deref())?;
+    let filter = CommitFilter::new(&opts.authors, since, until)?;
 
     // READ: walk the range once to get commit metadata.
     let walked = repo.walk(opts.range.as_deref(), opts.reviews)?;
 
-    let stats = stats_table(repo, opts, &authors, since, until, &walked)?;
+    let stats = stats_table(repo, opts, &filter, &walked)?;
 
     // Reviews intentionally use the full range, ignoring the author/date filters, to match the
     // original tool's behavior.
@@ -42,26 +40,22 @@ pub fn run(repo: &Repo, opts: &Options) -> Result<Report> {
 fn stats_table(
     repo: &Repo,
     opts: &Options,
-    authors: &[Regex],
-    since: Option<i64>,
-    until: Option<i64>,
+    filter: &CommitFilter,
     walked: &[WalkedCommit],
 ) -> Result<Option<StatsTable>> {
     // PROCESS: author/date filter.
-    let kept_idx = filter::keep_indices(walked.iter().map(|w| &w.meta), authors, since, until);
-    let kept: Vec<&WalkedCommit> = kept_idx.iter().map(|&i| &walked[i]).collect();
+    let kept: Vec<&WalkedCommit> = walked.iter().filter(|w| filter.keeps(&w.meta)).collect();
 
     // READ: numstat only the survivors.
-    let diffs = repo.numstats(&kept)?;
-
-    // PROCESS: build the table.
-    let rows: Vec<table::CommitStat> = kept
-        .iter()
-        .zip(diffs)
-        .map(|(w, diff)| table::CommitStat {
-            key: w.meta.author.key(opts.email),
+    let rows: Vec<table::CommitStat> = repo
+        .numstats(&kept)?
+        .into_iter()
+        .map(|(meta, diff)| table::CommitStat {
+            key: meta.author.key(opts.email),
             diff,
         })
         .collect();
+
+    // PROCESS: build the table.
     Ok(table::stats_table(&rows, opts.sort, opts.reverse))
 }
