@@ -82,19 +82,8 @@ impl Repo {
     /// report a git-backed repository.
     pub fn open(path: impl AsRef<Path>, vcs: Vcs) -> Result<Self> {
         let path = path.as_ref();
-        let workspace = match vcs {
-            Vcs::Git => None,
-            Vcs::Auto if std::env::var_os("GIT_DIR").is_some() => None,
-            Vcs::Auto => find_jj_workspace(path, true),
-            Vcs::Jj => {
-                Some(
-                    find_jj_workspace(path, false).ok_or_else(|| Error::NoJjWorkspace {
-                        path: std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()),
-                    })?,
-                )
-            }
-        };
-        let Some(workspace) = workspace else {
+        let git_dir_set = std::env::var_os("GIT_DIR").is_some();
+        let Some(workspace) = jj_workspace_to_read(path, vcs, git_dir_set)? else {
             let repo = gix::ThreadSafeRepository::discover_with_environment_overrides(path)
                 .map_err(|e| Error::OpenRepository(Box::new(e)))?;
             return Ok(Self {
@@ -222,6 +211,29 @@ impl Repo {
                 })
                 .collect()),
         }
+    }
+}
+
+/// The jj workspace to read for `path`, or `None` to read it as a git repository. This looks for
+/// `.jj` and `.git` on disk.
+///
+/// [`Vcs::Auto`] picks git when `GIT_DIR` is set, as it is inside git hooks. Otherwise it picks the
+/// nearer of a jj workspace and a git repository, with jj for a colocated workspace. [`Vcs::Jj`]
+/// ignores `GIT_DIR` and any nearer git repository.
+///
+/// # Errors
+///
+/// Returns [`Error::NoJjWorkspace`] if [`Vcs::Jj`] finds no workspace.
+fn jj_workspace_to_read(path: &Path, vcs: Vcs, git_dir_set: bool) -> Result<Option<PathBuf>> {
+    match vcs {
+        Vcs::Git => Ok(None),
+        Vcs::Auto if git_dir_set => Ok(None),
+        Vcs::Auto => Ok(find_jj_workspace(path, true)),
+        Vcs::Jj => find_jj_workspace(path, false)
+            .map(Some)
+            .ok_or_else(|| Error::NoJjWorkspace {
+                path: std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()),
+            }),
     }
 }
 
@@ -739,10 +751,10 @@ mod tests {
     use hegel::generators;
 
     use super::{
-        find_jj_workspace, parse_date, parse_jj_log_line, parse_reviewers, split_ident,
-        trailer_contributor,
+        find_jj_workspace, jj_workspace_to_read, parse_date, parse_jj_log_line, parse_reviewers,
+        split_ident, trailer_contributor,
     };
-    use crate::model::{Contributor, DiffStat};
+    use crate::model::{Contributor, DiffStat, Vcs};
 
     #[test]
     fn parse_date_returns_none_for_no_input() {
@@ -850,6 +862,38 @@ mod tests {
                 found.as_ref().is_none_or(|f| !f.starts_with(&dirs[0])),
                 "found {found:?}"
             ),
+        }
+    }
+
+    /// Every `--vcs` choice, with and without `GIT_DIR`, from a colocated workspace and from a git
+    /// repository nested in it. `GIT_DIR` steers only `auto`, and forced jj ignores the nearer git
+    /// repository.
+    #[test]
+    fn backend_choice_follows_vcs_and_git_dir() {
+        let root = tempfile::tempdir().unwrap();
+        let ws = root.path().join("ws");
+        std::fs::create_dir_all(ws.join(".jj")).unwrap();
+        std::fs::create_dir(ws.join(".git")).unwrap();
+        let nested = ws.join("nested");
+        std::fs::create_dir_all(nested.join(".git")).unwrap();
+        let ws = ws.canonicalize().unwrap();
+
+        let cases = [
+            (&ws, Vcs::Auto, false, Some(&ws)),
+            (&ws, Vcs::Auto, true, None),
+            (&ws, Vcs::Git, false, None),
+            (&ws, Vcs::Jj, true, Some(&ws)),
+            (&nested, Vcs::Auto, false, None),
+            (&nested, Vcs::Auto, true, None),
+            (&nested, Vcs::Jj, false, Some(&ws)),
+        ];
+        for (path, vcs, git_dir_set, want) in cases {
+            let got = jj_workspace_to_read(path, vcs, git_dir_set).unwrap();
+            assert_eq!(
+                got.as_ref(),
+                want,
+                "{path:?} {vcs:?} git_dir_set={git_dir_set}"
+            );
         }
     }
 
