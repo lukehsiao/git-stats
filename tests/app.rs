@@ -20,7 +20,6 @@ fn commit(name: &str, email: &str, time: i64, diff: DiffStat) -> NulledCommit {
             reviewers: Vec::new(),
         },
         diff,
-        is_merge: false,
     }
 }
 
@@ -130,17 +129,6 @@ fn invalid_author_pattern_is_a_typed_error() {
         matches!(err, git_stats::Error::AuthorPattern(_)),
         "expected AuthorPattern, got: {err:?}"
     );
-}
-
-#[test]
-fn merge_commits_count_but_contribute_no_lines() {
-    let mut merge = commit("Ada", "ada@x", 100, diff(999, 999, 9));
-    merge.is_merge = true;
-    let repo = Repo::create_null(vec![merge, commit("Ada", "ada@x", 200, diff(4, 1, 2))]);
-
-    let r = report(&repo, &options(None));
-    // Both commits count, but only the non-merge contributes files and lines.
-    assert_eq!(counts(author(&r, "Ada")), (2, 2, 4, 1, 3), "{r:#?}");
 }
 
 #[test]
