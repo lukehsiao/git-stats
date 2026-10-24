@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 use rayon::prelude::*;
 
 use crate::error::{Error, Result};
-use crate::model::{CommitMeta, Contributor, DiffStat, Trailer, Vcs};
+use crate::model::{CommitMeta, Contributor, DiffStat, Vcs};
 
 /// A commit yielded by [`Repo::walk`]: its logic-facing metadata plus an opaque handle the wrapper
 /// uses to compute the numstat later.
@@ -156,14 +156,14 @@ impl Repo {
     }
 
     /// Read commit metadata for every commit in `range`: a git revision range, or a revset in a jj
-    /// workspace. `None` means `HEAD` for git and `::@` for jj. Trailers are parsed only when
-    /// `need_trailers` is set, since they feed only the reviews table and decoding every commit
+    /// workspace. `None` means `HEAD` for git and `::@` for jj. Reviewers are parsed only when
+    /// `need_reviewers` is set, since they feed only the reviews table and decoding every commit
     /// message is costly on large histories.
     ///
     /// # Errors
     ///
     /// Returns an error if the range cannot be resolved or a commit object cannot be read.
-    pub fn walk(&self, range: Option<&str>, need_trailers: bool) -> Result<Vec<WalkedCommit>> {
+    pub fn walk(&self, range: Option<&str>, need_reviewers: bool) -> Result<Vec<WalkedCommit>> {
         match &self.backend {
             Backend::Real {
                 repo: tsr,
@@ -174,9 +174,9 @@ impl Repo {
                 // traversal already decoded instead of re-reading packs.
                 repo.object_cache_size_if_unset(8 * 1024 * 1024);
                 match revisions {
-                    Revisions::Git => walk_git(&repo, range.unwrap_or("HEAD"), need_trailers),
+                    Revisions::Git => walk_git(&repo, range.unwrap_or("HEAD"), need_reviewers),
                     Revisions::Jj(workspace) => {
-                        walk_jj(&repo, workspace, range.unwrap_or("::@"), need_trailers)
+                        walk_jj(&repo, workspace, range.unwrap_or("::@"), need_reviewers)
                     }
                 }
             }
@@ -350,7 +350,11 @@ fn diff_cache(repo: &gix::Repository, revisions: &Revisions) -> Result<gix::diff
     }
 }
 
-fn walk_git(repo: &gix::Repository, range: &str, need_trailers: bool) -> Result<Vec<WalkedCommit>> {
+fn walk_git(
+    repo: &gix::Repository,
+    range: &str,
+    need_reviewers: bool,
+) -> Result<Vec<WalkedCommit>> {
     let (tips, hidden) = resolve_range(repo, range)?;
     let walk = repo
         .rev_walk(tips)
@@ -366,7 +370,7 @@ fn walk_git(repo: &gix::Repository, range: &str, need_trailers: bool) -> Result<
         info.map(|info| (info.id, None))
             .map_err(|e| Error::ReadCommit(Box::new(e)))
     });
-    read_commits(repo, commits, need_trailers)
+    read_commits(repo, commits, need_reviewers)
 }
 
 /// The `jj log` template for [`walk_jj`]: one line per commit with its ID. A commit that is
@@ -388,7 +392,7 @@ fn walk_jj(
     repo: &gix::Repository,
     workspace: &Path,
     revset: &str,
-    need_trailers: bool,
+    need_reviewers: bool,
 ) -> Result<Vec<WalkedCommit>> {
     // Like any jj command, `jj log` snapshots the working copy first, so `@` includes edits that
     // are not yet committed elsewhere.
@@ -415,7 +419,7 @@ fn walk_jj(
                 output: line.to_string(),
             })),
         });
-    read_commits(repo, commits, need_trailers)
+    read_commits(repo, commits, need_reviewers)
 }
 
 /// Parse one line printed by [`JJ_LOG_TEMPLATE`], without its newline.
@@ -439,7 +443,7 @@ fn parse_jj_log_line(line: &str) -> Option<(gix::ObjectId, Option<DiffStat>)> {
 fn read_commits(
     repo: &gix::Repository,
     commits: impl Iterator<Item = Result<(gix::ObjectId, Option<DiffStat>)>>,
-    need_trailers: bool,
+    need_reviewers: bool,
 ) -> Result<Vec<WalkedCommit>> {
     let mailmap = repo.open_mailmap();
     // git grafts commits at the shallow boundary as parentless, so one whose header names several
@@ -463,7 +467,7 @@ fn read_commits(
                 .is_some_and(|s| s.binary_search(&id).is_ok());
             let is_merge = !is_boundary && commit.parents.len() > 1;
             Ok(WalkedCommit {
-                meta: commit_meta(&commit, &mailmap, need_trailers)?,
+                meta: commit_meta(&commit, &mailmap, need_reviewers)?,
                 is_merge,
                 handle: known.map_or(Handle::Diff(id), Handle::Known),
             })
@@ -474,15 +478,15 @@ fn read_commits(
 fn commit_meta(
     commit: &gix::objs::CommitRef<'_>,
     mailmap: &gix::mailmap::Snapshot,
-    need_trailers: bool,
+    need_reviewers: bool,
 ) -> Result<CommitMeta> {
     let author = mailmap.resolve(commit.author().map_err(|e| Error::ReadCommit(e.into()))?);
     let time_seconds = commit
         .committer()
         .map_err(|e| Error::ReadCommit(e.into()))?
         .seconds();
-    let trailers = if need_trailers {
-        parse_trailers(commit)
+    let reviewers = if need_reviewers {
+        parse_reviewers(commit, mailmap)
     } else {
         Vec::new()
     };
@@ -492,20 +496,65 @@ fn commit_meta(
             email: author.email.to_string(),
         },
         time_seconds,
-        trailers,
+        reviewers,
     })
 }
 
-fn parse_trailers(commit: &gix::objs::CommitRef<'_>) -> Vec<Trailer> {
+/// Trailer tokens that name a Reviewer, compared without regard to ASCII case as git compares them.
+const REVIEW_TOKENS: [&str; 3] = ["Acked-by", "Tested-by", "Reviewed-by"];
+
+/// The Reviewers that a commit's trailers name, one per review trailer, in message order. Other
+/// trailers, such as `Signed-off-by`, are skipped before any parsing or mailmap lookup.
+fn parse_reviewers(
+    commit: &gix::objs::CommitRef<'_>,
+    mailmap: &gix::mailmap::Snapshot,
+) -> Vec<Contributor> {
     let Some(body) = commit.message().body() else {
         return Vec::new();
     };
     body.trailers()
-        .map(|t| Trailer {
-            token: t.token.to_string(),
-            value: t.value.to_string(),
+        .filter(|t| {
+            REVIEW_TOKENS
+                .iter()
+                .any(|k| t.token.eq_ignore_ascii_case(k.as_bytes()))
         })
+        .map(|t| trailer_contributor(&t.value.to_string(), mailmap))
         .collect()
+}
+
+/// The Contributor a trailer value names, resolved through `.mailmap` as `git shortlog
+/// --group=trailer` does. A value that is not `Name <email>` is taken literally as the name, with
+/// no email and no mailmap lookup, as git takes it.
+fn trailer_contributor(value: &str, mailmap: &gix::mailmap::Snapshot) -> Contributor {
+    let Some((name, email)) = split_ident(value) else {
+        return Contributor {
+            name: value.to_string(),
+            email: String::new(),
+        };
+    };
+    // The mailmap matches on name and email only, so the signature needs no time.
+    let resolved = mailmap.resolve_cow(gix::actor::SignatureRef {
+        name: name.into(),
+        email: email.into(),
+        time: "",
+    });
+    Contributor {
+        name: resolved.name.to_string(),
+        email: resolved.email.to_string(),
+    }
+}
+
+/// Split `Name <email>` as git's `split_ident_line` does. The name is everything before the first
+/// `<`, without trailing whitespace. The email is everything between that `<` and the first `>`
+/// after it, untrimmed. Anything after that `>` is ignored. Returns `None` without a `<`, or
+/// without a `>` after it.
+fn split_ident(value: &str) -> Option<(&str, &str)> {
+    // git's `isspace` is locale-independent and covers only these four characters, so a trailing
+    // no-break space or vertical tab stays part of the name.
+    const GIT_SPACE: [char; 4] = [' ', '\t', '\n', '\r'];
+    let (name, rest) = value.split_once('<')?;
+    let (email, _) = rest.split_once('>')?;
+    Some((name.trim_end_matches(GIT_SPACE), email))
 }
 
 fn numstat_real(
@@ -695,8 +744,11 @@ pub fn parse_date(input: Option<&str>) -> Result<Option<i64>> {
 mod tests {
     use hegel::generators;
 
-    use super::{find_jj_workspace, parse_date, parse_jj_log_line};
-    use crate::model::DiffStat;
+    use super::{
+        find_jj_workspace, parse_date, parse_jj_log_line, parse_reviewers, split_ident,
+        trailer_contributor,
+    };
+    use crate::model::{Contributor, DiffStat};
 
     #[test]
     fn parse_date_returns_none_for_no_input() {
@@ -805,5 +857,83 @@ mod tests {
                 "found {found:?}"
             ),
         }
+    }
+
+    /// Each case is how git's `split_ident_line` splits the value, so the Reviewer row matches `git
+    /// shortlog --group=trailer`.
+    #[test]
+    fn split_ident_follows_git() {
+        let cases = [
+            ("Ada Lovelace <ada@x>", Some(("Ada Lovelace", "ada@x"))),
+            ("<ada@x>", Some(("", "ada@x"))),
+            ("Ada  \t<ada@x>", Some(("Ada", "ada@x"))),
+            ("Ada<ada@x>", Some(("Ada", "ada@x"))),
+            ("Ada < ada@x >", Some(("Ada", " ada@x "))),
+            ("Ada <ada@x> # see <foo>", Some(("Ada", "ada@x"))),
+            ("Ada <>", Some(("Ada", ""))),
+            ("Ada\r\n <ada@x>", Some(("Ada", "ada@x"))),
+            ("Ada\u{a0} <ada@x>", Some(("Ada\u{a0}", "ada@x"))),
+            ("Ada\u{b} <ada@x>", Some(("Ada\u{b}", "ada@x"))),
+            ("Ada", None),
+            ("Ada <ada@x", None),
+            ("Ada ada@x>", None),
+        ];
+        for (value, want) in cases {
+            assert_eq!(split_ident(value), want, "value: {value:?}");
+        }
+    }
+
+    /// Any `Name <email>` splits back into its parts, whatever follows the `>`.
+    #[hegel::test]
+    fn split_ident_recovers_name_and_email(tc: hegel::TestCase) {
+        let name = tc.draw(generators::from_regex(r"([^<\s]([^<]*[^<\s])?)?").fullmatch(true));
+        let email = tc.draw(generators::from_regex(r"[^>]*").fullmatch(true));
+        let gap = tc.draw(generators::from_regex(r"[ \t]*").fullmatch(true));
+        let tail = tc.draw(generators::text());
+        let value = format!("{name}{gap}<{email}>{tail}");
+        assert_eq!(split_ident(&value), Some((name.as_str(), email.as_str())));
+    }
+
+    #[test]
+    fn trailer_contributors_resolve_through_the_mailmap() {
+        let mailmap = gix::mailmap::Snapshot::from_bytes(b"New Name <new@x> <old@x>\n");
+        let who = |name: &str, email: &str| Contributor {
+            name: name.to_string(),
+            email: email.to_string(),
+        };
+        assert_eq!(
+            trailer_contributor("Old Name <old@x>", &mailmap),
+            who("New Name", "new@x")
+        );
+        assert_eq!(
+            trailer_contributor("Other <other@x>", &mailmap),
+            who("Other", "other@x")
+        );
+        // git takes a value that is not an identity literally, without a mailmap lookup.
+        assert_eq!(trailer_contributor("old@x", &mailmap), who("old@x", ""));
+    }
+
+    /// Only review trailers name Reviewers, whatever their case, one entry per trailer in message
+    /// order.
+    #[test]
+    fn parse_reviewers_keeps_only_review_trailers() {
+        let raw = b"tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n\
+            author A <a@x> 1600000000 +0000\n\
+            committer A <a@x> 1600000000 +0000\n\
+            \n\
+            subject\n\
+            \n\
+            body\n\
+            \n\
+            Signed-off-by: A <a@x>\n\
+            reviewed-BY: Rev <rev@x>\n\
+            Tested-by: Rev <rev@x>\n\
+            Acked-by: Ack <ack@x>\n";
+        let commit = gix::objs::CommitRef::from_bytes(raw, gix::hash::Kind::Sha1).unwrap();
+        let names: Vec<String> = parse_reviewers(&commit, &gix::mailmap::Snapshot::default())
+            .into_iter()
+            .map(|c| c.ident())
+            .collect();
+        assert_eq!(names, ["Rev <rev@x>", "Rev <rev@x>", "Ack <ack@x>"]);
     }
 }

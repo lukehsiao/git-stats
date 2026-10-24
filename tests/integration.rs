@@ -559,6 +559,81 @@ fn mailmap_folds_identities_like_git_shortlog() {
     );
 }
 
+/// Reviewers resolve through `.mailmap` and split `Name <email>` exactly as `git shortlog
+/// --group=trailer` does, so both tools credit the same rows with the same counts.
+#[test]
+fn reviewers_match_git_shortlog_by_trailer() {
+    if !git_available() {
+        eprintln!("git not available; skipping integration test");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.name", "Ada"]);
+    git(p, &["config", "user.email", "ada@example.com"]);
+    std::fs::write(
+        p.join(".mailmap"),
+        "New Name <new@example.com> <old@example.com>\n",
+    )
+    .unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "add mailmap"]);
+    let reviewed_by = [
+        "Old Name <old@example.com>",
+        "New Name <new@example.com>",
+        // git splits at the first `>` after the `<`, so the comment is not part of the email.
+        "Rev <rev@example.com> # see <foo>",
+        // git trims only ASCII whitespace before the `<`, so the no-break space stays in the name.
+        "Nbsp\u{a0} <nbsp@example.com>",
+        // Not an identity, so git takes it literally.
+        "Some Team",
+    ];
+    for value in reviewed_by {
+        git(
+            p,
+            &[
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "change",
+                "-m",
+                &format!("Reviewed-by: {value}"),
+            ],
+        );
+    }
+
+    let shortlog = git(
+        p,
+        &["shortlog", "-sne", "--group=trailer:reviewed-by", "HEAD"],
+    );
+    let mut want: Vec<(u64, String)> = shortlog
+        .lines()
+        .map(|l| {
+            let (count, key) = l.trim().split_once('\t').unwrap();
+            (count.parse().unwrap(), key.to_string())
+        })
+        .collect();
+    want.sort();
+
+    let repo = Repo::open(p, Vcs::Git).unwrap();
+    let mut opts = options(Some("HEAD"));
+    opts.email = true;
+    opts.reviews = true;
+    let r = report(&repo, &opts);
+    let mut got: Vec<(u64, String)> = r
+        .reviews
+        .iter()
+        .map(|rv| (rv.commits, rv.author.clone()))
+        .collect();
+    got.sort();
+
+    assert_eq!(got, want, "git shortlog:\n{shortlog}\n{r:#?}");
+    assert_eq!(reviewer(&r, "New Name <new@example.com>").commits, 2);
+}
+
 #[test]
 fn submodule_changes_count_like_git_numstat() {
     if !git_available() {

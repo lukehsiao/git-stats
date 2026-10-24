@@ -63,7 +63,7 @@ mod tests {
                     email: format!("{name}@example.com"),
                 },
                 time_seconds: tc.draw(generators::integers::<i64>()),
-                trailers: Vec::new(),
+                reviewers: Vec::new(),
             });
         }
         metas

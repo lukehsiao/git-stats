@@ -4,7 +4,7 @@
 mod common;
 
 use git_stats::app;
-use git_stats::model::{CommitMeta, Contributor, DiffStat, Options, Trailer};
+use git_stats::model::{CommitMeta, Contributor, DiffStat, Options};
 use git_stats::repo::{NulledCommit, Repo};
 
 use common::{author, counts, has_author, options, report, reviewer, total};
@@ -17,7 +17,7 @@ fn commit(name: &str, email: &str, time: i64, diff: DiffStat) -> NulledCommit {
                 email: email.to_string(),
             },
             time_seconds: time,
-            trailers: Vec::new(),
+            reviewers: Vec::new(),
         },
         diff,
         is_merge: false,
@@ -32,11 +32,14 @@ fn diff(insertions: u64, deletions: u64, files: u64) -> DiffStat {
     }
 }
 
-fn trailer(token: &str, value: &str) -> Trailer {
-    Trailer {
-        token: token.to_string(),
-        value: value.to_string(),
-    }
+/// A commit by Ada that Rev Iewer reviewed.
+fn reviewed_commit() -> NulledCommit {
+    let mut c = commit("Ada", "ada@x", 100, diff(1, 0, 1));
+    c.meta.reviewers = vec![Contributor {
+        name: "Rev Iewer".to_string(),
+        email: "rev@x".to_string(),
+    }];
+    c
 }
 
 /// Three commits across two authors (with spaces in their names), used by the aggregation tests
@@ -161,29 +164,8 @@ fn email_flag_splits_same_name_distinct_emails() {
 }
 
 #[test]
-fn reviews_credit_a_reviewer_once_per_commit() {
-    let mut reviewed = commit("Ada", "ada@x", 100, diff(1, 0, 1));
-    reviewed.meta.trailers = vec![
-        trailer("Reviewed-by", "Rev Iewer <rev@x>"),
-        trailer("Tested-by", "Rev Iewer <rev@x>"),
-        // Not a review/test trailer; must be ignored.
-        trailer("Signed-off-by", "Sole Author <sole@x>"),
-    ];
-
-    let mut with_reviews = options(None);
-    with_reviews.reviews = true;
-    let r = report(&Repo::create_null(vec![reviewed]), &with_reviews);
-
-    // Two matching trailers on one commit still credit the reviewer once, and the Signed-off-by
-    // trailer is not a review token, so it is not counted.
-    assert_eq!(r.reviews.len(), 1, "{r:#?}");
-    assert_eq!(reviewer(&r, "Rev Iewer").commits, 1, "{r:#?}");
-}
-
-#[test]
 fn reviews_ignore_the_author_and_date_filters() {
-    let mut reviewed = commit("Ada", "ada@x", 100, diff(1, 0, 1));
-    reviewed.meta.trailers = vec![trailer("Reviewed-by", "Rev Iewer <rev@x>")];
+    let reviewed = reviewed_commit();
     let mut opts = options(None);
     opts.reviews = true;
     opts.authors = vec!["matches-nobody".to_string()];
@@ -197,8 +179,7 @@ fn reviews_ignore_the_author_and_date_filters() {
 
 #[test]
 fn reviews_are_left_out_unless_requested() {
-    let mut reviewed = commit("Ada", "ada@x", 100, diff(1, 0, 1));
-    reviewed.meta.trailers = vec![trailer("Reviewed-by", "Rev Iewer <rev@x>")];
+    let reviewed = reviewed_commit();
 
     let r = report(&Repo::create_null(vec![reviewed]), &options(None));
 
