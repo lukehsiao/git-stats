@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::model::{CommitMeta, Contributor, DiffStat, Review, SortBy, Stat};
+use crate::model::{CommitMeta, DiffStat, Review, SortBy, Stat};
 
 /// One commit's contribution to the stats table: its Author's Contributor key and its numstat.
 #[derive(Debug, Clone)]
@@ -24,9 +24,6 @@ pub struct Report {
     pub stats: Option<StatsTable>,
     pub reviews: Vec<Review>,
 }
-
-/// Trailer tokens (lowercased) that count as a review/test sign-off.
-const REVIEW_TOKENS: [&str; 3] = ["acked-by", "tested-by", "reviewed-by"];
 
 /// Build the stats table from per-commit stats: one row per Author, sorted by `sort`, plus the
 /// Total row. Returns `None` when there are no commits, since an empty table is not shown at all.
@@ -68,9 +65,9 @@ pub fn stats_table(commits: &[CommitStat], sort: SortBy, reverse: bool) -> Optio
     Some(StatsTable { rows, total })
 }
 
-/// Build the reviews table: per Reviewer, the commits they signed off on via Acked-by / Tested-by /
-/// Reviewed-by trailers. A Reviewer is credited at most once per commit even if they appear in
-/// several of those trailers. Rows come in descending commit count, ties by name, A to Z.
+/// Build the reviews table: per Reviewer, the commits they signed off on. A Reviewer is credited at
+/// most once per commit even if several of its trailers name them. Rows come in descending commit
+/// count, ties by name, A to Z.
 #[must_use]
 pub fn reviews_table<'a>(
     metas: impl IntoIterator<Item = &'a CommitMeta>,
@@ -79,14 +76,8 @@ pub fn reviews_table<'a>(
     let mut counts: HashMap<String, u64> = HashMap::new();
     let mut credited: Vec<String> = Vec::new();
     for m in metas {
-        for t in &m.trailers {
-            if !REVIEW_TOKENS
-                .iter()
-                .any(|token| t.token.eq_ignore_ascii_case(token))
-            {
-                continue;
-            }
-            let key = reviewer(&t.value).key(email);
+        for r in &m.reviewers {
+            let key = r.key(email);
             if !credited.contains(&key) {
                 credited.push(key);
             }
@@ -127,20 +118,6 @@ fn add(s: &mut Stat, diff: DiffStat) {
     s.deletions = s.deletions.saturating_add(diff.deletions);
 }
 
-/// The Reviewer named by a trailer value such as `Ada Lovelace <ada@x>`. Whitespace around the name
-/// and the email does not matter. A value without `<email>` is all name.
-fn reviewer(value: &str) -> Contributor {
-    let value = value.trim();
-    let (name, email) = match value.strip_suffix('>').and_then(|v| v.split_once('<')) {
-        Some((name, email)) => (name.trim(), email.trim()),
-        None => (value, ""),
-    };
-    Contributor {
-        name: name.to_string(),
-        email: email.to_string(),
-    }
-}
-
 /// Net line delta, clamped so absurd inputs cannot overflow (panic-free).
 fn net(insertions: u64, deletions: u64) -> i64 {
     let ins = i64::try_from(insertions).unwrap_or(i64::MAX);
@@ -151,14 +128,10 @@ fn net(insertions: u64, deletions: u64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Trailer;
+    use crate::model::Contributor;
     use hegel::generators::{self, Generator};
     use std::cmp::Ordering;
-    use std::collections::BTreeMap;
-
-    fn reviewer_key(value: &str, email: bool) -> String {
-        reviewer(value).key(email)
-    }
+    use std::collections::{BTreeMap, BTreeSet};
 
     /// A small author pool forces grouping. It has multi-word names, so grouping and ordering see
     /// spaces, and names that differ only in case, so ordering sees byte order. `u32`-range diffs
@@ -313,11 +286,16 @@ mod tests {
         let _ = stats_table(&commits, SortBy::Net, false);
     }
 
-    /// Commits whose trailers credit Reviewers from a small pool, so ties in commit count are
-    /// common. The pool has names that differ only in case.
+    /// Commits whose Reviewers come from a small pool, so ties in commit count are common, and a
+    /// commit can name the same Reviewer twice. The pool has names that differ only in case.
     #[hegel::composite]
     fn reviewed_commits(tc: &hegel::TestCase) -> Vec<CommitMeta> {
-        const REVIEWERS: [&str; 4] = ["Zed <z@x>", "Ada <a@x>", "Bob <b@x>", "ada <l@x>"];
+        const REVIEWERS: [(&str, &str); 4] = [
+            ("Zed", "z@x"),
+            ("Ada", "a@x"),
+            ("Bob", "b@x"),
+            ("ada", "l@x"),
+        ];
         let n = tc.draw(generators::integers::<usize>().max_value(20));
         let mut metas = Vec::with_capacity(n);
         for _ in 0..n {
@@ -331,16 +309,35 @@ mod tests {
                     email: "author@x".to_string(),
                 },
                 time_seconds: 0,
-                trailers: picks
+                reviewers: picks
                     .into_iter()
-                    .map(|i| Trailer {
-                        token: "Reviewed-by".to_string(),
-                        value: REVIEWERS[i].to_string(),
+                    .map(|i| Contributor {
+                        name: REVIEWERS[i].0.to_string(),
+                        email: REVIEWERS[i].1.to_string(),
                     })
                     .collect(),
             });
         }
         metas
+    }
+
+    /// Each Reviewer's count is the number of commits that name them at least once.
+    #[hegel::test]
+    fn reviews_count_each_commit_once(tc: hegel::TestCase) {
+        let metas = tc.draw(reviewed_commits().print_as_debug());
+        let email = tc.draw(generators::booleans());
+        let mut expected: BTreeMap<String, u64> = BTreeMap::new();
+        for m in &metas {
+            let keys: BTreeSet<String> = m.reviewers.iter().map(|r| r.key(email)).collect();
+            for key in keys {
+                *expected.entry(key).or_default() += 1;
+            }
+        }
+        let actual: BTreeMap<String, u64> = reviews_table(&metas, email)
+            .into_iter()
+            .map(|r| (r.author, r.commits))
+            .collect();
+        assert_eq!(actual, expected);
     }
 
     /// Reviewers come in descending commit count, and ties come A to Z. The order is strict, so it
@@ -356,58 +353,5 @@ mod tests {
                 "{a:?} then {b:?}"
             );
         }
-    }
-
-    /// `reviewer_key` keeps a full multi-word name (spaces and all). With an email present and
-    /// `email=false` it strips the ` <email>`; with `email=true` it keeps the whole value. When the
-    /// trailer carries only a bare name (no ` <email>`) both modes return the name unchanged. The
-    /// name generator produces 1-4 words so the ` <` split is exercised against names that
-    /// themselves contain spaces, and `with_email` exercises both branches.
-    #[hegel::test]
-    fn reviewer_key_handles_multiword_names(tc: hegel::TestCase) {
-        let name = tc.draw(generators::from_regex(r"[A-Za-z]+( [A-Za-z]+){0,3}").fullmatch(true));
-        if tc.draw(generators::booleans()) {
-            let email = tc.draw(generators::from_regex(r"[a-z]+@[a-z]+\.[a-z]+").fullmatch(true));
-            let value = format!("{name} <{email}>");
-            assert_eq!(reviewer_key(&value, false), name);
-            assert_eq!(reviewer_key(&value, true), value);
-        } else {
-            // No email in the trailer: both modes return the name unchanged.
-            assert_eq!(reviewer_key(&name, false), name);
-            assert_eq!(reviewer_key(&name, true), name);
-        }
-    }
-
-    /// Whitespace around the name, around the email inside `<>`, and around the whole value gives
-    /// the same key as the plain `Name <email>`, so the same reviewer is one row in both modes.
-    #[hegel::test]
-    fn reviewer_key_ignores_surrounding_whitespace(tc: hegel::TestCase) {
-        let name = tc.draw(generators::from_regex(r"[A-Za-z]+( [A-Za-z]+){0,3}").fullmatch(true));
-        let email = tc.draw(generators::from_regex(r"[a-z]+@[a-z]+\.[a-z]+").fullmatch(true));
-        let pad = || tc.draw(generators::from_regex(r"[ \t]{0,3}").fullmatch(true));
-        let padded = format!(
-            "{}{name}{}<{}{email}{}>{}",
-            pad(),
-            pad(),
-            pad(),
-            pad(),
-            pad()
-        );
-        let plain = format!("{name} <{email}>");
-        for with_email in [false, true] {
-            assert_eq!(
-                reviewer_key(&padded, with_email),
-                reviewer_key(&plain, with_email),
-                "padded: {padded:?}"
-            );
-        }
-    }
-
-    /// A trailer with only `<email>` is keyed by the email in both modes.
-    #[hegel::test]
-    fn reviewer_key_falls_back_to_the_email(tc: hegel::TestCase) {
-        let email = tc.draw(generators::from_regex(r"[a-z]+@[a-z]+\.[a-z]+").fullmatch(true));
-        let with_email = tc.draw(generators::booleans());
-        assert_eq!(reviewer_key(&format!("<{email}>"), with_email), email);
     }
 }
