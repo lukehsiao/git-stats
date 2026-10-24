@@ -549,7 +549,7 @@ fn mailmap_folds_identities_like_git_shortlog() {
         .stats
         .iter()
         .flat_map(|t| &t.rows)
-        .map(|s| s.author.as_str())
+        .map(|s| s.key.as_str())
         .collect();
     // The old identity must not leak into any row, and the unmapped author passes through.
     assert_eq!(
@@ -626,7 +626,7 @@ fn reviewers_match_git_shortlog_by_trailer() {
     let mut got: Vec<(u64, String)> = r
         .reviews
         .iter()
-        .map(|rv| (rv.commits, rv.author.clone()))
+        .map(|rv| (rv.commits, rv.key.clone()))
         .collect();
     got.sort();
 

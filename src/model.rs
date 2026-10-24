@@ -107,24 +107,6 @@ pub struct Options {
     pub until: Option<String>,
 }
 
-/// Aggregated per-author statistics. Doubles as one row of the stats table.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Stat {
-    pub author: String,
-    pub commits: u64,
-    pub num_files: u64,
-    pub insertions: u64,
-    pub deletions: u64,
-    pub net: i64,
-}
-
-/// Aggregated per-reviewer statistics. Doubles as one row of the reviews table.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Review {
-    pub author: String,
-    pub commits: u64,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -183,12 +183,7 @@ fn reverse_flips_sort_order() {
     ]);
     let names = |opts: &Options| -> Vec<String> {
         let r = report(&repo, opts);
-        r.stats
-            .unwrap()
-            .rows
-            .into_iter()
-            .map(|s| s.author)
-            .collect()
+        r.stats.unwrap().rows.into_iter().map(|s| s.key).collect()
     };
 
     // Descending by commits: Ada (2) precedes Bob (1).

@@ -47,15 +47,13 @@ fn stats_table(
     let kept: Vec<&WalkedCommit> = walked.iter().filter(|w| filter.keeps(&w.meta)).collect();
 
     // READ: numstat only the survivors.
-    let rows: Vec<table::CommitStat> = repo
-        .numstats(&kept)?
-        .into_iter()
-        .map(|(meta, diff)| table::CommitStat {
-            key: meta.author.key(opts.email),
-            diff,
-        })
-        .collect();
+    let commits = repo.numstats(&kept)?;
 
     // PROCESS: build the table.
-    Ok(table::stats_table(&rows, opts.sort, opts.reverse))
+    Ok(table::stats_table(
+        commits,
+        opts.email,
+        opts.sort,
+        opts.reverse,
+    ))
 }

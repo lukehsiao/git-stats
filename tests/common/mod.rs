@@ -8,8 +8,8 @@ use std::path::Path;
 use std::process::Command;
 
 use git_stats::app;
-use git_stats::logic::table::Report;
-use git_stats::model::{Options, Review, SortBy, Stat};
+use git_stats::logic::table::{Report, Review, Stat};
+use git_stats::model::{Options, SortBy};
 use git_stats::repo::Repo;
 
 /// Default options over `range`, as the CLI gives them without flags.
@@ -36,7 +36,7 @@ pub fn author<'a>(report: &'a Report, key: &str) -> &'a Stat {
         .stats
         .iter()
         .flat_map(|t| &t.rows)
-        .find(|s| s.author == key)
+        .find(|s| s.key == key)
         .unwrap_or_else(|| panic!("no author {key:?} in {report:#?}"))
 }
 
@@ -46,7 +46,7 @@ pub fn has_author(report: &Report, key: &str) -> bool {
         .stats
         .iter()
         .flat_map(|t| &t.rows)
-        .any(|s| s.author == key)
+        .any(|s| s.key == key)
 }
 
 pub fn total(report: &Report) -> &Stat {
@@ -67,7 +67,7 @@ pub fn reviewer<'a>(report: &'a Report, key: &str) -> &'a Review {
     report
         .reviews
         .iter()
-        .find(|r| r.author == key)
+        .find(|r| r.key == key)
         .unwrap_or_else(|| panic!("no reviewer {key:?} in {report:#?}"))
 }
 

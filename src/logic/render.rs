@@ -3,8 +3,7 @@ use std::fmt::Write as _;
 use unicode_width::UnicodeWidthStr;
 use yansi::Paint;
 
-use crate::logic::table::{Report, StatsTable};
-use crate::model::Review;
+use crate::logic::table::{Report, Review, StatsTable};
 
 /// Render the report as text: the stats table, then the reviews table after a blank line. A table
 /// with nothing to show is left out, along with its blank line, so the text never opens with one.
@@ -45,7 +44,7 @@ fn render_stats(stats: &StatsTable) -> String {
         .chain(std::iter::once(&stats.total))
         .map(|r| {
             vec![
-                r.author.clone(),
+                r.key.clone(),
                 r.commits.to_string(),
                 r.num_files.to_string(),
                 display_add(r.insertions),
@@ -64,7 +63,7 @@ fn render_reviews(rows: &[Review]) -> String {
     const HEADER: [&str; 2] = ["Reviewer/Tester", "Commits"];
     let cells: Vec<Vec<String>> = rows
         .iter()
-        .map(|r| vec![r.author.clone(), r.commits.to_string()])
+        .map(|r| vec![r.key.clone(), r.commits.to_string()])
         .collect();
     table(&HEADER, &cells, Emphasis::Header)
 }
@@ -171,12 +170,12 @@ fn display_net(n: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Stat;
+    use crate::logic::table::Stat;
     use hegel::generators::{self, Generator};
 
-    fn stat(author: &str, net: i64) -> Stat {
+    fn stat(key: &str, net: i64) -> Stat {
         Stat {
-            author: author.to_string(),
+            key: key.to_string(),
             commits: 1,
             num_files: 1,
             insertions: 1,
@@ -190,8 +189,8 @@ mod tests {
     #[hegel::composite]
     fn stats_table(tc: &hegel::TestCase) -> StatsTable {
         const NAMES: [&str; 5] = ["Ada", "Ada Lovelace", "格蕾丝 <g@x>", "Jose\u{301}", ""];
-        let draw_stat = |author: &str| Stat {
-            author: author.to_string(),
+        let draw_stat = |key: &str| Stat {
+            key: key.to_string(),
             commits: tc.draw(generators::integers::<u64>()),
             num_files: tc.draw(generators::integers::<u64>()),
             insertions: tc.draw(generators::integers::<u64>()),
@@ -269,7 +268,7 @@ mod tests {
     fn reviews_render_two_columns() {
         yansi::disable();
         let rows = vec![Review {
-            author: "Ada".to_string(),
+            key: "Ada".to_string(),
             commits: 3,
         }];
         assert_eq!(
@@ -292,7 +291,7 @@ mod tests {
         let n = tc.draw(generators::integers::<u64>().max_value(3));
         let reviews: Vec<Review> = (0..n)
             .map(|commits| Review {
-                author: "Rev Iewer".to_string(),
+                key: "Rev Iewer".to_string(),
                 commits,
             })
             .collect();
