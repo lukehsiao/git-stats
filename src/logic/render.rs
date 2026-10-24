@@ -3,15 +3,16 @@ use std::fmt::Write as _;
 use unicode_width::UnicodeWidthStr;
 use yansi::Paint;
 
-use crate::model::{Review, Stat, display_add, display_del, display_net};
+use crate::logic::table::StatsTable;
+use crate::model::{Review, display_add, display_del, display_net};
 
-/// Render the per-author stats table.
+/// Render the per-author stats table, with the Total row last.
 ///
 /// Blue comes from the ANSI 16 palette so terminal themes can remap it. Styling
 /// is gated by yansi's global condition, so it is plain text when color is
 /// disabled.
 #[must_use]
-pub fn render_stats(rows: &[Stat]) -> String {
+pub fn render_stats(stats: &StatsTable) -> String {
     const HEADER: [&str; 6] = [
         "Author",
         "Commits",
@@ -20,8 +21,10 @@ pub fn render_stats(rows: &[Stat]) -> String {
         "Deletions",
         "Net Δ",
     ];
-    let cells: Vec<Vec<String>> = rows
+    let cells: Vec<Vec<String>> = stats
+        .rows
         .iter()
+        .chain(std::iter::once(&stats.total))
         .map(|r| {
             vec![
                 r.author.clone(),
@@ -33,8 +36,7 @@ pub fn render_stats(rows: &[Stat]) -> String {
             ]
         })
         .collect();
-    // The caller appends the totals as the final row, which is emphasized to
-    // separate it from the per-author rows above it.
+    // The Total row is emphasized to separate it from the per-author rows above it.
     table(&HEADER, &cells, Emphasis::HeaderAndLastRow)
 }
 
@@ -127,6 +129,7 @@ fn push_cell(out: &mut String, cell: &str, bold: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Stat;
     use hegel::generators::{self, Generator};
 
     fn stat(author: &str, net: i64) -> Stat {
@@ -143,22 +146,24 @@ mod tests {
     /// The pool mixes ASCII with wide CJK and a combining accent, because column
     /// widths are measured in terminal cells rather than bytes or `char`s.
     #[hegel::composite]
-    fn stat_list(tc: &hegel::TestCase) -> Vec<Stat> {
+    fn stats_table(tc: &hegel::TestCase) -> StatsTable {
         const NAMES: [&str; 5] = ["Ada", "Ada Lovelace", "格蕾丝 <g@x>", "Jose\u{301}", ""];
+        let draw_stat = |author: &str| Stat {
+            author: author.to_string(),
+            commits: tc.draw(generators::integers::<u64>()),
+            num_files: tc.draw(generators::integers::<u64>()),
+            insertions: tc.draw(generators::integers::<u64>()),
+            deletions: tc.draw(generators::integers::<u64>()),
+            net: tc.draw(generators::integers::<i64>()),
+        };
         let n = tc.draw(generators::integers::<usize>().max_value(20));
         let mut rows = Vec::with_capacity(n);
         for _ in 0..n {
             let who = tc.draw(generators::integers::<usize>().max_value(NAMES.len() - 1));
-            rows.push(Stat {
-                author: NAMES[who].to_string(),
-                commits: tc.draw(generators::integers::<u64>()),
-                num_files: tc.draw(generators::integers::<u64>()),
-                insertions: tc.draw(generators::integers::<u64>()),
-                deletions: tc.draw(generators::integers::<u64>()),
-                net: tc.draw(generators::integers::<i64>()),
-            });
+            rows.push(draw_stat(NAMES[who]));
         }
-        rows
+        let total = draw_stat("Total");
+        StatsTable { rows, total }
     }
 
     /// Columns only line up if every line occupies the same number of terminal
@@ -166,7 +171,7 @@ mod tests {
     #[hegel::test]
     fn every_stats_line_is_equally_wide(tc: hegel::TestCase) {
         yansi::disable();
-        let out = render_stats(&tc.draw(stat_list().print_as_debug()));
+        let out = render_stats(&tc.draw(stats_table().print_as_debug()));
         let widths: Vec<usize> = out.lines().map(UnicodeWidthStr::width).collect();
         assert!(
             widths.windows(2).all(|w| w[0] == w[1]),
@@ -177,7 +182,7 @@ mod tests {
     #[hegel::test]
     fn stats_lines_never_end_in_whitespace(tc: hegel::TestCase) {
         yansi::disable();
-        let out = render_stats(&tc.draw(stat_list().print_as_debug()));
+        let out = render_stats(&tc.draw(stats_table().print_as_debug()));
         for line in out.lines() {
             assert_eq!(line.trim_end(), line, "trailing space in:\n{out}");
         }
@@ -186,12 +191,16 @@ mod tests {
     #[test]
     fn columns_are_two_spaces_apart_with_numbers_right_aligned() {
         yansi::disable();
-        let out = render_stats(&[stat("Ada", -1)]);
+        let out = render_stats(&StatsTable {
+            rows: vec![stat("Ada", -1)],
+            total: stat("Total", -1),
+        });
         assert_eq!(
             out,
             concat!(
                 "Author  Commits  Changed Files  Insertions  Deletions  Net Δ\n",
-                "Ada           1              1          +1         -1     -1"
+                "Ada           1              1          +1         -1     -1\n",
+                "Total         1              1          +1         -1     -1"
             )
         );
     }
@@ -200,11 +209,16 @@ mod tests {
     #[test]
     fn a_long_author_widens_the_first_column() {
         yansi::disable();
-        let out = render_stats(&[stat("Ada", 1), stat("Grace Brewster Hopper", 1)]);
+        let out = render_stats(&StatsTable {
+            rows: vec![stat("Ada", 1), stat("Grace Brewster Hopper", 1)],
+            total: stat("Total", 2),
+        });
         // Every line's first column is padded to the widest author, so the
         // second column starts at the same offset on all of them.
         let width = "Grace Brewster Hopper".len();
-        for (line, author) in out.lines().zip(["Author", "Ada", "Grace Brewster Hopper"]) {
+        let labels = ["Author", "Ada", "Grace Brewster Hopper", "Total"];
+        assert_eq!(out.lines().count(), labels.len(), "in:\n{out}");
+        for (line, author) in out.lines().zip(labels) {
             assert_eq!(&line[..width], &format!("{author:<width$}"), "in:\n{out}");
         }
     }
