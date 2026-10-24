@@ -2,8 +2,9 @@
 //! CLI, and the filesystem.
 //!
 //! Two adapters select the commits of a Revision range: `git` resolves a git revision range, and
-//! `jj` evaluates a revset with the `jj` CLI. Either way, `commits` reads the selected commits from
-//! the git object store and `diff` computes their numstats.
+//! `jj` evaluates a revset with the `jj` CLI. Each also opens the repository and supplies the
+//! attributes for diffs. Either way, `commits` reads the selected commits from the git object store
+//! and `diff` computes their numstats.
 
 mod commits;
 mod diff;
@@ -44,6 +45,10 @@ enum Numstat {
     Known(DiffStat),
 }
 
+/// The commits an adapter selects, in walk order, each with its numstat when the adapter already
+/// knows it.
+type Selected<'r> = Box<dyn Iterator<Item = Result<(gix::ObjectId, Option<DiffStat>)>> + 'r>;
+
 /// The adapter that selects the commits of a Revision range.
 enum Revisions {
     Git,
@@ -52,15 +57,10 @@ enum Revisions {
 }
 
 impl Revisions {
-    fn walk(
-        &self,
-        repo: &gix::Repository,
-        range: Option<&str>,
-        need_reviewers: bool,
-    ) -> Result<Vec<WalkedCommit>> {
+    fn select<'r>(&self, repo: &'r gix::Repository, range: Option<&str>) -> Result<Selected<'r>> {
         match self {
-            Self::Git => git::walk(repo, range, need_reviewers),
-            Self::Jj(workspace) => jj::walk(repo, workspace, range, need_reviewers),
+            Self::Git => git::select(repo, range),
+            Self::Jj(workspace) => jj::select(workspace, range),
         }
     }
 
@@ -127,7 +127,8 @@ impl Repo {
         let mut repo = self.repo.to_thread_local();
         // The metadata read then reuses the commits that the traversal already decoded.
         repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
-        self.revisions.walk(&repo, range, need_reviewers)
+        let selected = self.revisions.select(&repo, range)?;
+        commits::read(&repo, selected, need_reviewers)
     }
 
     /// Compute the numstat of each given commit, paired with that commit's metadata, in the same

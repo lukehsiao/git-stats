@@ -4,14 +4,14 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use super::{WalkedCommit, commits};
+use super::Selected;
 use crate::error::{Error, Result};
 use crate::model::DiffStat;
 
 /// Open the git repository that backs the jj workspace rooted at `workspace`.
 pub(super) fn open(workspace: &Path) -> Result<gix::ThreadSafeRepository> {
-    // Reading the store location needs no snapshot of the working copy. The revset walk snapshots
-    // it later, before any commit is read.
+    // Reading the store location needs no snapshot of the working copy. The revset selection
+    // snapshots it later, before any commit is read.
     let git_dir = run(
         workspace,
         "git root",
@@ -27,13 +27,9 @@ pub(super) fn open(workspace: &Path) -> Result<gix::ThreadSafeRepository> {
     Ok(repo.into_sync())
 }
 
-/// Read every commit in the jj `revset`, which defaults to `::@`.
-pub(super) fn walk(
-    repo: &gix::Repository,
-    workspace: &Path,
-    revset: Option<&str>,
-    need_reviewers: bool,
-) -> Result<Vec<WalkedCommit>> {
+/// Select every commit in the jj `revset`, which defaults to `::@`, with jj's numstat for each
+/// commit that [`LOG_TEMPLATE`] gives one.
+pub(super) fn select(workspace: &Path, revset: Option<&str>) -> Result<Selected<'static>> {
     // Like any jj command, `jj log` snapshots the working copy first, so `@` includes edits that
     // are not yet committed elsewhere.
     let out = run(
@@ -48,19 +44,26 @@ pub(super) fn walk(
             LOG_TEMPLATE,
         ],
     )?;
-    let commits = out.lines().filter_map(|line| match parse_log_line(line) {
-        // jj's `root()` is a virtual commit with an all-zero ID and no git object to read.
-        Some((id, _)) if id.is_null() => None,
-        Some(commit) => Some(Ok(commit)),
-        None => Some(Err(Error::JjOutput {
-            command: "log",
-            output: line.to_string(),
-        })),
-    });
-    commits::read(repo, commits, need_reviewers)
+    Ok(Box::new(parse_log(&out)?.into_iter().map(Ok)))
 }
 
-/// The `jj log` template for [`walk`]: one line per commit with its ID. A commit that is
+/// Parse the output of `jj log` with [`LOG_TEMPLATE`]: each commit in order, with jj's numstat
+/// when it printed one. A line that does not parse is an error.
+fn parse_log(out: &str) -> Result<Vec<(gix::ObjectId, Option<DiffStat>)>> {
+    out.lines()
+        .filter_map(|line| match parse_log_line(line) {
+            // jj's `root()` is a virtual commit with an all-zero ID and no git object to read.
+            Some((id, _)) if id.is_null() => None,
+            Some(commit) => Some(Ok(commit)),
+            None => Some(Err(Error::JjOutput {
+                command: "log",
+                output: line.to_string(),
+            })),
+        })
+        .collect()
+}
+
+/// The `jj log` template for [`select`]: one line per commit with its ID. A commit that is
 /// conflicted, or has a conflicted parent, also gets its file, insertion, and deletion counts. jj
 /// stores a conflict as a git tree of `.jjconflict-*` directories, so a git diff that touches one
 /// would count those directories rather than the change. jj diffs only these commits. Its diff is
@@ -163,8 +166,31 @@ fn run(workspace: &Path, command: &'static str, args: &[&str]) -> Result<String>
 mod tests {
     use hegel::generators;
 
-    use super::{find_workspace, parse_log_line};
+    use super::{find_workspace, parse_log, parse_log_line};
+    use crate::error::Error;
     use crate::model::DiffStat;
+
+    /// The output skips jj's virtual root commit and fails on the first line that does not parse,
+    /// naming that line.
+    #[test]
+    fn jj_log_skips_the_root_and_rejects_bad_lines() {
+        let id = "1".repeat(40);
+        let root = "0".repeat(40);
+        let parsed = parse_log(&format!("{id} 1 2 3\n{root}\n")).unwrap();
+        let diff = DiffStat {
+            insertions: 2,
+            deletions: 3,
+            files: 1,
+        };
+        let want = gix::ObjectId::from_hex(id.as_bytes()).unwrap();
+        assert_eq!(parsed, [(want, Some(diff))]);
+
+        let err = parse_log(&format!("{id}\nnot a commit\n")).unwrap_err();
+        assert!(
+            matches!(&err, Error::JjOutput { output, .. } if output == "not a commit"),
+            "{err:?}"
+        );
+    }
 
     /// Every line `LOG_TEMPLATE` can print parses back to what it encodes: a bare commit ID, or
     /// an ID followed by files, insertions, and deletions.

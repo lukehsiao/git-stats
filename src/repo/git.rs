@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::{WalkedCommit, commits};
+use super::Selected;
 use crate::error::{Error, Result};
 
 /// Discover the git repository containing `path`, honoring `GIT_DIR` and related environment
@@ -12,12 +12,9 @@ pub(super) fn open(path: &Path) -> Result<gix::ThreadSafeRepository> {
         .map_err(|e| Error::OpenRepository(Box::new(e)))
 }
 
-/// Read every commit in the git revision `range`, which defaults to `HEAD`.
-pub(super) fn walk(
-    repo: &gix::Repository,
-    range: Option<&str>,
-    need_reviewers: bool,
-) -> Result<Vec<WalkedCommit>> {
+/// Select every commit in the git revision `range`, which defaults to `HEAD`. git knows no numstat
+/// ahead of the diff.
+pub(super) fn select<'r>(repo: &'r gix::Repository, range: Option<&str>) -> Result<Selected<'r>> {
     let range = range.unwrap_or("HEAD");
     let (tips, hidden) = resolve_range(repo, range)?;
     let walk = repo
@@ -30,11 +27,10 @@ pub(super) fn walk(
         })?;
     // Stream the IDs so each commit is read right after the traversal decoded it, while it is still
     // in the object cache.
-    let commits = walk.map(|info| {
+    Ok(Box::new(walk.map(|info| {
         info.map(|info| (info.id, None))
             .map_err(|e| Error::ReadCommit(Box::new(e)))
-    });
-    commits::read(repo, commits, need_reviewers)
+    })))
 }
 
 /// A diff resource cache with the `.gitattributes` of the checkout, read from the index as gix
