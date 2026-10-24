@@ -37,9 +37,13 @@ The last row of the Stats table, which sums every Author row.
 _Avoid_: summary row, footer
 
 **Numstat**:
-A commit's changed-file, insertion, and deletion counts, as `git log --numstat` reports them. A merge counts as a commit but adds nothing. A commit at a shallow clone's boundary counts as a root commit, so its Numstat covers its whole tree.
+A commit's changed-file, insertion, and deletion counts, as `git log --numstat` reports them. A merge counts as a commit but adds nothing. A commit at the Shallow boundary counts as a root commit, so its Numstat covers its whole tree.
 _Avoid_: diffstat, line counts
 
 **Revision range**:
 The commits a report covers: a git revision range, or a revset in a jj workspace.
 _Avoid_: range spec, commit range
+
+**Shallow boundary**:
+The oldest commits a shallow clone keeps, whose parents are missing. A Revision range that reaches them lacks the history before them.
+_Avoid_: shallow root, graft point, grafted commit

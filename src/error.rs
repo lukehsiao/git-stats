@@ -52,6 +52,13 @@ pub enum Error {
         source: Source,
     },
 
+    /// A revision could not be resolved in a shallow clone, which lacks the history past its
+    /// boundary.
+    #[error(
+        "this shallow clone may lack the revision; `git fetch --deepen` or `--unshallow` fetches more history"
+    )]
+    ShallowClone(#[source] Box<Error>),
+
     /// Walking the revision range failed.
     #[error("could not walk revision range {range:?}")]
     WalkRange {

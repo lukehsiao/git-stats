@@ -134,7 +134,7 @@ porcelain:
   With `--email`, a contributor without an email shows as just the name, where `git shortlog -e` shows `Name <>`.
 - **Merge commits** count as commits but contribute no line or file changes, matching the default of `git log --numstat`.
 - **Shallow clones** work: commits at the shallow boundary diff against the empty tree, exactly as `git log --numstat` shows them.
-  A warning on stderr notes that the truncated history makes the stats differ from a full clone's.
+  When the range reaches the boundary, a warning on stderr notes that the truncated history makes the stats differ from a full clone's.
 - **Submodules** count like `git log --numstat`: adding or repointing one is a single changed file whose pointer line is the diff, and a file swapped with a submodule is one changed file too.
   Renaming one without repointing it is one changed file with no line changes, as git pairs the rename.
 - **Partial clones** (`git clone --filter=blob:none`) fail with an error that says the clone lacks objects, because gitoxide does not fetch missing objects the way git does.

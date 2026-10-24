@@ -94,12 +94,14 @@ impl StatsTable {
     }
 }
 
-/// Everything a run shows: the stats table, absent when no commit survives the filters, and the
-/// reviews table, empty when not requested or when no commit has a review trailer.
+/// Everything a run shows: the stats table, absent when no commit survives the filters, the
+/// reviews table, empty when not requested or when no commit has a review trailer, and whether
+/// the range reached the shallow boundary, which calls for a warning that history is missing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Report {
     pub stats: Option<StatsTable>,
     pub reviews: Vec<Review>,
+    pub reached_shallow_boundary: bool,
 }
 
 /// Build the stats table from each commit's metadata and numstat: one row per Author, keyed by

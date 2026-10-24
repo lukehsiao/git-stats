@@ -27,5 +27,9 @@ pub fn run(repo: &Repo, cli: &Cli, now: &Zoned) -> Result<Report> {
     // tool's behavior.
     let reviewers = commits.reviewers.as_deref().unwrap_or_default();
     let reviews = table::reviews_table(reviewers, cli.email);
-    Ok(Report { stats, reviews })
+    Ok(Report {
+        stats,
+        reviews,
+        reached_shallow_boundary: commits.reached_shallow_boundary,
+    })
 }

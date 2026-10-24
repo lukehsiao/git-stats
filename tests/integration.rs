@@ -225,10 +225,8 @@ fn shallow_clones_treat_boundary_commits_as_parentless() {
     let url = format!("file://{}", origin.display());
     git(p, &["clone", "-q", "--depth", "2", &url, "shallow"]);
 
-    let repo = Repo::open(p.join("shallow"), Vcs::Git).unwrap();
-    // The binary warns on shallow clones via this probe; the full-clone control lives in
-    // `tests/repo.rs`, `counts_lines_and_review_trailers`.
-    assert!(repo.is_shallow(), "depth-2 clone should detect as shallow");
+    let shallow = p.join("shallow");
+    let repo = Repo::open(&shallow, Vcs::Git).unwrap();
     let (n, diff) = sum(&read(&repo, Some("HEAD")));
 
     // git log --numstat here shows c3 as +1 and the boundary commit c2 as its whole tree (+2),
@@ -238,6 +236,20 @@ fn shallow_clones_treat_boundary_commits_as_parentless() {
         diff.insertions, 3,
         "the boundary commit should diff against the empty tree"
     );
+
+    // The binary warns only when the range reaches the boundary.
+    let stderr = |range: &str| {
+        let out = Command::new(env!("CARGO_BIN_EXE_git-stats"))
+            .current_dir(&shallow)
+            .args(["--vcs", "git", range])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        String::from_utf8(out.stderr).unwrap()
+    };
+    let warning = "warning: this is a shallow clone";
+    assert!(stderr("HEAD").contains(warning));
+    assert!(!stderr("HEAD~1..HEAD").contains(warning));
 }
 
 /// A commit whose header git itself would never write (non-numeric committer timestamp) fails

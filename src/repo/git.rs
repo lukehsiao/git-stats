@@ -70,9 +70,17 @@ fn default_head(rev: &str) -> &str {
 }
 
 fn single(repo: &gix::Repository, rev: &str) -> Result<gix::ObjectId> {
-    let err = |source: Box<dyn std::error::Error + Send + Sync>| Error::ResolveRevision {
-        revision: rev.to_string(),
-        source,
+    let err = |source: Box<dyn std::error::Error + Send + Sync>| {
+        let e = Error::ResolveRevision {
+            revision: rev.to_string(),
+            source,
+        };
+        // A shallow clone lacks the history past its boundary, the likely cause here.
+        if repo.is_shallow().unwrap_or(false) {
+            Error::ShallowClone(Box::new(e))
+        } else {
+            e
+        }
     };
     // git peels tags recursively at rev-list endpoints, so an annotated tag must resolve to its
     // target commit here. Without peeling, a tag OID on the hidden side matches nothing during the

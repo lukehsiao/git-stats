@@ -73,6 +73,7 @@ fn read_commit(
             Vec::new()
         },
         numstat,
+        at_shallow_boundary: is_boundary,
     })
 }
 

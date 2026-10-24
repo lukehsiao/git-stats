@@ -338,7 +338,11 @@ mod tests {
             .collect();
         let both = stats.is_some() && !reviews.is_empty();
         let reviews_only = stats.is_none() && !reviews.is_empty();
-        let out = report(&Report { stats, reviews });
+        let out = report(&Report {
+            stats,
+            reviews,
+            reached_shallow_boundary: false,
+        });
 
         assert!(!out.starts_with('\n'), "report opens blank: {out:?}");
         if !out.is_empty() {
@@ -358,6 +362,7 @@ mod tests {
         let empty = Report {
             stats: None,
             reviews: Vec::new(),
+            reached_shallow_boundary: false,
         };
         assert_eq!(report(&empty), "");
     }

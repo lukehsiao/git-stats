@@ -11,12 +11,12 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let repo = Repo::open(".", cli.vcs)?;
-    if repo.is_shallow() {
+    let report = app::run(&repo, &cli, &gix::date::Zoned::now())?;
+    if report.reached_shallow_boundary {
         eprintln!(
             "warning: this is a shallow clone; commits beyond the shallow boundary are not counted"
         );
     }
-    let report = app::run(&repo, &cli, &gix::date::Zoned::now())?;
     write_report(&render::report(&report))
 }
 

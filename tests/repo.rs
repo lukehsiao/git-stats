@@ -37,8 +37,6 @@ fn counts_lines_and_review_trailers() {
     b.commit(ada().parent(first).file("a.txt", "line1\nline2\nline3\n"));
     let (_dir, repo) = b.open();
 
-    // Control for the shallow-clone probe: a full repository must not warn.
-    assert!(!repo.is_shallow(), "full repository detected as shallow");
     let commits = repo.read(Some("HEAD"), |_| true, true).unwrap();
 
     // The root adds 2 lines and the follow-up 1. Reviewers come one list per commit, newest first.
@@ -50,6 +48,8 @@ fn counts_lines_and_review_trailers() {
     assert_eq!(sum(&commits.kept), (2, want), "{commits:#?}");
     let rev = who("Rev Iewer", "rev@example.com");
     assert_eq!(commits.reviewers, Some(vec![vec![], vec![rev]]));
+    // A root commit of a full repository is not a shallow boundary.
+    assert!(!commits.reached_shallow_boundary);
     // Not asked for, Reviewers are absent rather than empty.
     let unread = repo.read(Some("HEAD"), |_| true, false).unwrap();
     assert_eq!(unread.reviewers, None);
@@ -242,7 +242,6 @@ fn shallow_boundary_merges_diff_like_root_commits() {
     );
     d.b.shallow(&[merge]);
     let (_dir, repo) = d.b.open();
-    assert!(repo.is_shallow());
 
     let commits = read(&repo, Some("HEAD"));
     let want = DiffStat {
@@ -251,6 +250,38 @@ fn shallow_boundary_merges_diff_like_root_commits() {
         files: 4,
     };
     assert_eq!(sum(&commits), (2, want), "{commits:#?}");
+}
+
+/// The walk reports reaching the shallow boundary only when a commit in the range is at it, and
+/// whatever the filter keeps, since the warning is about history the range lost. A commit walked
+/// after the boundary, such as a second root, must not clear the report.
+#[test]
+fn the_walk_reports_reaching_the_shallow_boundary() {
+    let mut b = RepoBuilder::new();
+    let boundary = b.commit(ada().file("a.txt", "a\n"));
+    let root = b.commit(ada().file("b.txt", "b\n"));
+    // The walk visits the merge, then its first parent, the boundary, then the root.
+    b.commit(
+        ada()
+            .parent(boundary)
+            .parent(root)
+            .file("a.txt", "a\n")
+            .file("b.txt", "b\n"),
+    );
+    b.shallow(&[boundary]);
+    let (_dir, repo) = b.open();
+    let reached = |range: &str, keep: bool| {
+        let commits = repo.read(Some(range), |_| keep, false).unwrap();
+        commits.reached_shallow_boundary
+    };
+
+    assert!(reached("HEAD", true));
+    assert!(reached("HEAD", false), "a filtered-out boundary counts");
+    assert!(!reached("HEAD^2", true), "the range misses the boundary");
+
+    // A revision past the boundary does not resolve, and the error says why.
+    let err = repo.read(Some("HEAD~5"), |_| true, false).unwrap_err();
+    assert!(matches!(err, git_stats::Error::ShallowClone(_)), "{err:?}");
 }
 
 #[test]

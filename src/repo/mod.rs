@@ -43,14 +43,18 @@ pub struct Commits {
     /// The Reviewers of every commit in the range, kept or not, one list per commit in walk order.
     /// `None` unless they were requested.
     pub reviewers: Option<Vec<Vec<Contributor>>>,
+    /// Whether any commit in the range, kept or not, is at the shallow boundary, so that older
+    /// history the range would cover is missing.
+    pub reached_shallow_boundary: bool,
 }
 
-/// A commit as the walk reads it: its metadata, its Reviewers (empty unless requested), and how to
-/// get its numstat.
+/// A commit as the walk reads it: its metadata, its Reviewers (empty unless requested), how to
+/// get its numstat, and whether it is at the shallow boundary.
 struct WalkedCommit {
     meta: CommitMeta,
     reviewers: Vec<Contributor>,
     numstat: Numstat,
+    at_shallow_boundary: bool,
 }
 
 /// How to obtain a commit's numstat, decided once when the walk reads the commit.
@@ -130,14 +134,6 @@ impl Repo {
         })
     }
 
-    /// Whether the repository is a shallow clone. Its truncated history makes every count differ
-    /// from the full clone's, so callers may want to warn. A shallow-file path that cannot be
-    /// represented natively counts as "not shallow", as the walk treats it.
-    #[must_use]
-    pub fn is_shallow(&self) -> bool {
-        self.repo.to_thread_local().is_shallow().unwrap_or(false)
-    }
-
     /// Read every commit in `range`: a git revision range, or a revset in a jj workspace. `None`
     /// means `HEAD` for git and `::@` for jj. Only the commits that `keep` accepts get a numstat,
     /// since diffing is the costly step. Merge commits contribute nothing, matching
@@ -160,7 +156,7 @@ impl Repo {
     ) -> Result<Commits> {
         // The walk's repository and its object cache drop here, before each diff worker opens its
         // own.
-        let (cache, kept, reviewers) = {
+        let (cache, kept, reviewers, reached_shallow_boundary) = {
             let mut repo = self.repo.to_thread_local();
             // The metadata read then reuses the commits that the traversal already decoded.
             repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
@@ -171,8 +167,10 @@ impl Repo {
             let cache = self.revisions.diff_cache(&repo)?;
             let mut reviewers = reviews.then(Vec::new);
             let mut kept = Vec::new();
+            let mut reached_shallow_boundary = false;
             for commit in commits::read(&repo, selected, reviews) {
                 let commit = commit?;
+                reached_shallow_boundary |= commit.at_shallow_boundary;
                 if let Some(all) = &mut reviewers {
                     all.push(commit.reviewers);
                 }
@@ -180,7 +178,7 @@ impl Repo {
                     kept.push((commit.meta, commit.numstat));
                 }
             }
-            (cache, kept, reviewers)
+            (cache, kept, reviewers, reached_shallow_boundary)
         };
         let kept = kept
             .into_par_iter()
@@ -189,7 +187,11 @@ impl Repo {
                 |worker, (meta, numstat)| Ok((meta, worker.numstat(numstat)?)),
             )
             .collect::<Result<_>>()?;
-        Ok(Commits { kept, reviewers })
+        Ok(Commits {
+            kept,
+            reviewers,
+            reached_shallow_boundary,
+        })
     }
 }
 
