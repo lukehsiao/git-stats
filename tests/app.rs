@@ -1,5 +1,5 @@
-//! Application-level tests driven by a nulled [`Repo`]. They exercise the real
-//! logic and coordination code end to end, with only the gix I/O neutralized.
+//! Application-level tests driven by a nulled [`Repo`]. They exercise the real logic and
+//! coordination code end to end, with only the gix I/O neutralized.
 
 mod common;
 
@@ -39,8 +39,8 @@ fn trailer(token: &str, value: &str) -> Trailer {
     }
 }
 
-/// Three commits across two authors (with spaces in their names), used by the
-/// aggregation tests below.
+/// Three commits across two authors (with spaces in their names), used by the aggregation tests
+/// below.
 fn two_author_repo() -> Repo {
     Repo::create_null(vec![
         commit("Ada Lovelace", "ada@x", 100, diff(10, 2, 3)),

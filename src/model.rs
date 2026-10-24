@@ -1,5 +1,5 @@
-//! Value objects: plain data passed between the pure logic and the gix
-//! infrastructure. Nothing here performs I/O or depends on gix.
+//! Value objects: plain data passed between the pure logic and the gix infrastructure. Nothing here
+//! performs I/O or depends on gix.
 
 use clap::ValueEnum;
 
@@ -19,8 +19,8 @@ pub struct Trailer {
 
 /// Everything the logic needs to know about a commit, independent of git.
 ///
-/// `time_seconds` is the committer timestamp (seconds since the Unix epoch),
-/// because that is the date `git log --since/--until` filters on.
+/// `time_seconds` is the committer timestamp (seconds since the Unix epoch), because that is the
+/// date `git log --since/--until` filters on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitMeta {
     pub author: Author,
@@ -28,9 +28,9 @@ pub struct CommitMeta {
     pub trailers: Vec<Trailer>,
 }
 
-/// Line and file changes for a single commit, equivalent to one commit's
-/// `git log --numstat` output. Merge commits carry the default (all zero),
-/// matching git's default of emitting no numstat for merges.
+/// Line and file changes for a single commit, equivalent to one commit's `git log --numstat`
+/// output. Merge commits carry the default (all zero), matching git's default of emitting no
+/// numstat for merges.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DiffStat {
     pub insertions: u64,
@@ -55,8 +55,7 @@ pub enum SortBy {
     Net,
 }
 
-/// Which version control system reads the repository and interprets the
-/// revision range.
+/// Which version control system reads the repository and interprets the revision range.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Vcs {
     /// Use jj in a jj workspace (colocated or not), git otherwise
@@ -70,9 +69,8 @@ pub enum Vcs {
 /// Parsed, validated options handed from the CLI down to the application layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
-    /// Revision range, interpreted by the infrastructure: git revision syntax
-    /// (e.g. `origin..HEAD`) or, in a jj workspace, a revset. `None` selects
-    /// the backend's default.
+    /// Revision range, interpreted by the infrastructure: git revision syntax (e.g. `origin..HEAD`)
+    /// or, in a jj workspace, a revset. `None` selects the backend's default.
     pub range: Option<String>,
     /// Group and display authors as `Name <email>` rather than just `Name`.
     pub email: bool,
@@ -80,8 +78,8 @@ pub struct Options {
     pub reviews: bool,
     pub sort: SortBy,
     pub reverse: bool,
-    /// Author regex patterns; a commit matches if any pattern matches. Empty
-    /// means no author filtering.
+    /// Author regex patterns; a commit matches if any pattern matches. Empty means no author
+    /// filtering.
     pub authors: Vec<String>,
     pub since: Option<String>,
     pub until: Option<String>,

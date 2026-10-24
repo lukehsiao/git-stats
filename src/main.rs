@@ -21,9 +21,9 @@ fn main() -> Result<()> {
     write_report(&render::report(&report))
 }
 
-/// Write the report to stdout, dying quietly when the pipe closes early
-/// (`git stats | head`). Rust ignores SIGPIPE, so the closed pipe surfaces as
-/// an EPIPE write error, and `print!` would panic on it.
+/// Write the report to stdout, dying quietly when the pipe closes early (`git stats | head`). Rust
+/// ignores SIGPIPE, so the closed pipe surfaces as an EPIPE write error, and `print!` would panic
+/// on it.
 fn write_report(output: &str) -> Result<()> {
     let mut stdout = std::io::stdout().lock();
     let result = stdout
@@ -31,17 +31,16 @@ fn write_report(output: &str) -> Result<()> {
         .and_then(|()| stdout.flush());
     match result {
         Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
-            // 128 + SIGPIPE: the status a shell reports when git itself is
-            // killed by the signal.
+            // 128 + SIGPIPE: the status a shell reports when git itself is killed by the signal.
             std::process::exit(141);
         }
         other => Ok(other?),
     }
 }
 
-/// Emit ANSI styling only when stdout is a TTY, `CLICOLOR` permits it, and
-/// `NO_COLOR` is unset. yansi's global condition then gates every `Paint` call
-/// in the render layer, so the logic itself stays oblivious to color.
+/// Emit ANSI styling only when stdout is a TTY, `CLICOLOR` permits it, and `NO_COLOR` is unset.
+/// yansi's global condition then gates every `Paint` call in the render layer, so the logic itself
+/// stays oblivious to color.
 fn enable_color_when_appropriate() {
     static HAVE_COLOR: Condition = Condition::from(|| {
         Condition::stdout_is_tty() && Condition::clicolor() && Condition::no_color()
