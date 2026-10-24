@@ -5,9 +5,13 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod common;
+
 use git_stats::app;
-use git_stats::model::{Options, SortBy, Vcs};
+use git_stats::model::Vcs;
 use git_stats::repo::Repo;
+
+use common::{counts, git, has_author, options, report, total};
 
 /// A temporary directory holding a hermetic jj config next to a workspace.
 struct Fixture {
@@ -86,35 +90,15 @@ impl Fixture {
     }
 }
 
-fn options(range: Option<&str>) -> Options {
-    Options {
-        range: range.map(str::to_string),
-        email: false,
-        reviews: false,
-        sort: SortBy::Commits,
-        reverse: false,
-        authors: Vec::new(),
-        since: None,
-        until: None,
-    }
-}
-
-fn row<'a>(out: &'a str, label: &str) -> &'a str {
+/// The Total row's columns after the label, read from the binary's plain text: commits, files,
+/// insertions, deletions, net.
+fn text_totals(out: &str) -> Vec<&str> {
     out.lines()
-        .find(|l| l.trim_start().starts_with(label))
-        .unwrap_or_else(|| panic!("no row starting with {label:?} in:\n{out}"))
-}
-
-/// The Total row's columns after the label: commits, files, insertions,
-/// deletions, net.
-fn totals(out: &str) -> Vec<&str> {
-    row(out, "Total").split_whitespace().skip(1).collect()
-}
-
-/// Run with color disabled so assertions see plain text.
-fn report(repo: &Repo, opts: &Options) -> String {
-    yansi::disable();
-    app::run(repo, opts).unwrap()
+        .find(|l| l.starts_with("Total"))
+        .unwrap_or_else(|| panic!("no Total row in:\n{out}"))
+        .split_whitespace()
+        .skip(1)
+        .collect()
 }
 
 /// Whether a usable `jj` binary is on PATH; tests skip gracefully without one.
@@ -142,12 +126,12 @@ fn default_revset_counts_the_working_copy_and_skips_root() {
     two_commits_and_a_pending_edit(&f);
 
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let out = report(&repo, &options(None));
+    let r = report(&repo, &options(None));
 
     // `::@` is first, second, and the snapshotted @, each adding one file's
     // lines: +2, +1, +1. jj's virtual root commit has no git object, so
     // reading it would fail the whole run.
-    assert_eq!(totals(&out), ["3", "3", "+4", "0", "+4"], "out:\n{out}");
+    assert_eq!(counts(total(&r)), (3, 3, 4, 0, 4), "{r:#?}");
 }
 
 #[test]
@@ -168,10 +152,10 @@ fn revsets_resolve_change_ids() {
     ]);
 
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let out = report(&repo, &options(Some(&format!("{first}..@-"))));
+    let r = report(&repo, &options(Some(&format!("{first}..@-"))));
 
     // jj's `x..y` is `::y ~ ::x`, which leaves only "second".
-    assert_eq!(totals(&out), ["1", "1", "+1", "0", "+1"], "out:\n{out}");
+    assert_eq!(counts(total(&r)), (1, 1, 1, 0, 1), "{r:#?}");
 }
 
 #[test]
@@ -185,18 +169,14 @@ fn colocated_workspace_defaults_to_jj_unless_git_is_forced() {
 
     // Forced git reads HEAD, which jj keeps at @-, so the pending edit is out.
     let git = Repo::open(&f.ws, Vcs::Git).unwrap();
-    let git_out = report(&git, &options(None));
-    assert_eq!(
-        totals(&git_out),
-        ["2", "2", "+3", "0", "+3"],
-        "git:\n{git_out}"
-    );
+    let git_r = report(&git, &options(None));
+    assert_eq!(counts(total(&git_r)), (2, 2, 3, 0, 3), "git: {git_r:#?}");
 
     let jj = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let out = report(&jj, &options(None));
-    assert_eq!(totals(&out), ["3", "3", "+4", "0", "+4"], "jj:\n{out}");
+    let r = report(&jj, &options(None));
+    assert_eq!(counts(total(&r)), (3, 3, 4, 0, 4), "jj: {r:#?}");
     // The same commits read through either backend give the same report.
-    assert_eq!(report(&jj, &options(Some("::@-"))), git_out);
+    assert_eq!(report(&jj, &options(Some("::@-"))), git_r);
 
     // In jj mode the range is a revset, where `HEAD` names nothing.
     assert!(app::run(&jj, &options(Some("HEAD"))).is_err());
@@ -213,11 +193,11 @@ fn non_colocated_workspace_applies_the_workspace_mailmap() {
     f.jj(&["commit", "-m", "add mailmap"]);
 
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let out = report(&repo, &options(Some("@-")));
+    let r = report(&repo, &options(Some("@-")));
 
     // jj's git store is bare and lives inside `.jj`, so the mailmap must come
     // from the workspace rather than a git worktree.
-    assert!(out.contains("Ada Lovelace"), "out:\n{out}");
+    assert!(has_author(&r, "Ada Lovelace"), "{r:#?}");
 }
 
 /// A non-colocated store has no index and an unborn `HEAD`, so attributes
@@ -237,11 +217,11 @@ fn workspace_gitattributes_apply_without_a_git_worktree() {
     f.jj(&["commit", "-m", "second"]);
 
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let out = report(&repo, &options(Some("::@-")));
+    let r = report(&repo, &options(Some("::@-")));
 
     // `-diff` makes `a.bin` binary: each change counts as a file with no
     // lines, so only the one `.gitattributes` line is an insertion.
-    assert_eq!(totals(&out), ["2", "3", "+1", "0", "+1"], "out:\n{out}");
+    assert_eq!(counts(total(&r)), (2, 3, 1, 0, 1), "{r:#?}");
 }
 
 #[test]
@@ -264,12 +244,12 @@ fn secondary_workspace_mailmap_wins_over_the_git_worktree() {
     .unwrap();
 
     let repo = Repo::open(&second, Vcs::Auto).unwrap();
-    let out = report(&repo, &options(Some("::@")));
+    let r = report(&repo, &options(Some("::@")));
 
     // Both files map the same email. The workspace being read decides, as
     // the worktree does for git.
-    assert!(out.contains("Second Mapping"), "out:\n{out}");
-    assert!(!out.contains("Main Mapping"), "out:\n{out}");
+    assert!(has_author(&r, "Second Mapping"), "{r:#?}");
+    assert!(!has_author(&r, "Main Mapping"), "{r:#?}");
 }
 
 #[test]
@@ -294,11 +274,11 @@ fn git_repository_nested_in_a_jj_workspace_stays_git() {
     );
 
     let repo = Repo::open(&nested, Vcs::Auto).unwrap();
-    let out = report(&repo, &options(None));
+    let r = report(&repo, &options(None));
 
     // The nearer `.git` wins: only the nested repository's one commit counts.
-    assert_eq!(totals(&out), ["1", "1", "+1", "0", "+1"], "out:\n{out}");
-    assert!(out.contains("Bob"), "out:\n{out}");
+    assert_eq!(counts(total(&r)), (1, 1, 1, 0, 1), "{r:#?}");
+    assert!(has_author(&r, "Bob"), "{r:#?}");
 }
 
 /// A conflicted commit "right" rebased onto "left", and `@` on top of it
@@ -332,16 +312,15 @@ fn conflicted_commits_count_their_materialized_diff() {
     }
     let f = conflict_fixture();
     let repo = Repo::open(&f.ws, Vcs::Auto).unwrap();
-    let out = report(&repo, &options(Some("conflicts()::@")));
+    let r = report(&repo, &options(Some("conflicts()::@")));
 
     // The conflicted commit replaces one line with conflict markers, and the
     // resolution replaces the markers with two lines, so each touches only
     // a.txt and the pair adds one line more than it removes, whatever the
     // marker style. A git diff would also count the `.jjconflict-*` files
     // that jj stores in a conflicted commit's tree.
-    let cols = totals(&out);
-    assert_eq!(cols[..2], ["2", "2"], "out:\n{out}");
-    assert_eq!(cols[4], "+1", "out:\n{out}");
+    let t = total(&r);
+    assert_eq!((t.commits, t.num_files, t.net), (2, 2, 1), "{r:#?}");
 }
 
 /// jj wraps log lines at `COLUMNS` when `ui.log-word-wrap` is set, even with
@@ -370,7 +349,7 @@ fn word_wrap_config_does_not_split_log_lines() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert_eq!(totals(&stdout)[..2], ["2", "2"], "out:\n{stdout}");
+    assert_eq!(text_totals(&stdout)[..2], ["2", "2"], "out:\n{stdout}");
 }
 
 #[test]
@@ -387,9 +366,9 @@ fn forced_jj_ignores_a_nearer_git_repository() {
 
     let repo = Repo::open(&nested, Vcs::Jj).unwrap();
     // `::@-` leaves out whatever the snapshot of `@` picks up under `nested`.
-    let out = report(&repo, &options(Some("::@-")));
+    let r = report(&repo, &options(Some("::@-")));
 
-    assert_eq!(totals(&out), ["2", "2", "+3", "0", "+3"], "out:\n{out}");
+    assert_eq!(counts(total(&r)), (2, 2, 3, 0, 3), "{r:#?}");
 }
 
 #[test]
@@ -427,7 +406,7 @@ fn binary_finds_the_workspace_from_a_subdirectory() {
     );
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert_eq!(
-        totals(&stdout),
+        text_totals(&stdout),
         ["3", "3", "+4", "0", "+4"],
         "out:\n{stdout}"
     );
@@ -459,20 +438,8 @@ fn git_dir_in_a_colocated_workspace_selects_git() {
 
     // `HEAD` is @-, so only the two committed changes count.
     assert_eq!(
-        totals(&stdout),
+        text_totals(&stdout),
         ["2", "2", "+3", "0", "+3"],
         "out:\n{stdout}"
     );
-}
-
-fn git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .current_dir(dir)
-        .args(args)
-        // Ignore host config so commit creation is hermetic (no gpgsign, etc.).
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_SYSTEM", "/dev/null")
-        .status()
-        .expect("git should be installed");
-    assert!(status.success(), "git {args:?} failed");
 }

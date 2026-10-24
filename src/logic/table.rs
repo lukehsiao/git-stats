@@ -17,6 +17,14 @@ pub struct StatsTable {
     pub total: Stat,
 }
 
+/// Everything a run shows: the stats table, absent when no commit survives the filters, and the
+/// reviews table, empty when not requested or when no commit has a review trailer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Report {
+    pub stats: Option<StatsTable>,
+    pub reviews: Vec<Review>,
+}
+
 /// Trailer tokens (lowercased) that count as a review/test sign-off.
 const REVIEW_TOKENS: [&str; 3] = ["acked-by", "tested-by", "reviewed-by"];
 

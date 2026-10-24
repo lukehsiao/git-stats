@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::Parser;
 use yansi::Condition;
 
-use git_stats::{app, cli::Cli, repo::Repo};
+use git_stats::{app, cli::Cli, logic::render, repo::Repo};
 
 fn main() -> Result<()> {
     enable_color_when_appropriate();
@@ -17,8 +17,8 @@ fn main() -> Result<()> {
             "warning: this is a shallow clone; commits beyond the shallow boundary are not counted"
         );
     }
-    let output = app::run(&repo, &opts)?;
-    write_report(&output)
+    let report = app::run(&repo, &opts)?;
+    write_report(&render::report(&report))
 }
 
 /// Write the report to stdout, dying quietly when the pipe closes early
