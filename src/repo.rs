@@ -146,13 +146,14 @@ impl Repo {
         }
     }
 
-    /// Whether the repository is a shallow clone. Its truncated history makes
-    /// every count differ from the full clone's, so callers may want to warn.
-    /// Nulled repositories never are.
+    /// Whether the repository is a shallow clone. Its truncated history makes every count differ
+    /// from the full clone's, so callers may want to warn. Nulled repositories never are. A
+    /// shallow-file path that cannot be represented natively counts as "not shallow", as the walk
+    /// treats it.
     #[must_use]
     pub fn is_shallow(&self) -> bool {
         match &self.backend {
-            Backend::Real { repo, .. } => repo.to_thread_local().is_shallow(),
+            Backend::Real { repo, .. } => repo.to_thread_local().is_shallow().unwrap_or(false),
             Backend::Null(_) => false,
         }
     }
