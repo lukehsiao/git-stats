@@ -1,0 +1,4 @@
+# The global git config for tests. See `.cargo/config.toml`.
+[core]
+	# Without this, git and gix read `$XDG_CONFIG_HOME/git/attributes`.
+	attributesFile = /dev/null

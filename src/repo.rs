@@ -1,8 +1,4 @@
 //! Infrastructure: the only module that talks to gix, the `jj` CLI, and the filesystem.
-//!
-//! [`Repo`] has two constructors. [`Repo::open`] reads a real repository; [`Repo::create_null`]
-//! returns an in-memory stand-in driven by canned commits, so application and logic code can be
-//! tested without touching git.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -29,27 +25,9 @@ enum Numstat {
         id: gix::ObjectId,
         base: Option<gix::ObjectId>,
     },
-    /// The numstat is already known. A merge contributes nothing, matching `git log --numstat`. A
-    /// nulled repository has canned numstats, and jj computes them where a conflict makes the git
-    /// trees meaningless.
+    /// The numstat is already known. A merge contributes nothing, matching `git log --numstat`, and
+    /// jj computes the numstat where a conflict makes the git trees meaningless.
     Known(DiffStat),
-}
-
-/// A canned commit used to build a nulled [`Repo`] in tests. Its `diff` is the numstat the walk
-/// reports, so a merge carries the default (all zero).
-#[derive(Debug, Clone)]
-pub struct NulledCommit {
-    pub meta: CommitMeta,
-    pub diff: DiffStat,
-}
-
-enum Backend {
-    Real {
-        // Boxed because a `ThreadSafeRepository` is far larger than the null variant.
-        repo: Box<gix::ThreadSafeRepository>,
-        revisions: Revisions,
-    },
-    Null(Vec<NulledCommit>),
 }
 
 /// Who selects the commits of a revision range. Either way, gix reads the selected commits from the
@@ -62,9 +40,10 @@ enum Revisions {
     Jj(PathBuf),
 }
 
-/// A git repository or jj workspace, or a nulled stand-in for it.
+/// A git repository or jj workspace.
 pub struct Repo {
-    backend: Backend,
+    repo: gix::ThreadSafeRepository,
+    revisions: Revisions,
 }
 
 impl Repo {
@@ -87,10 +66,8 @@ impl Repo {
             let repo = gix::ThreadSafeRepository::discover_with_environment_overrides(path)
                 .map_err(|e| Error::OpenRepository(Box::new(e)))?;
             return Ok(Self {
-                backend: Backend::Real {
-                    repo: Box::new(repo),
-                    revisions: Revisions::Git,
-                },
+                repo,
+                revisions: Revisions::Git,
             });
         };
         // Reading the store location needs no snapshot of the working copy. The revset walk
@@ -108,73 +85,37 @@ impl Repo {
         repo.set_workdir(workspace.clone())
             .map_err(|e| Error::OpenRepository(Box::new(e)))?;
         Ok(Self {
-            backend: Backend::Real {
-                repo: Box::new(repo.into_sync()),
-                revisions: Revisions::Jj(workspace),
-            },
+            repo: repo.into_sync(),
+            revisions: Revisions::Jj(workspace),
         })
     }
 
-    /// Build a nulled repository whose [`walk`](Self::walk) returns the given commits verbatim. The
-    /// revision range is ignored, since range resolution is real-git behavior exercised separately
-    /// by integration tests.
-    #[must_use]
-    pub fn create_null(commits: Vec<NulledCommit>) -> Self {
-        Self {
-            backend: Backend::Null(commits),
-        }
-    }
-
     /// Whether the repository is a shallow clone. Its truncated history makes every count differ
-    /// from the full clone's, so callers may want to warn. Nulled repositories never are. A
-    /// shallow-file path that cannot be represented natively counts as "not shallow", as the walk
-    /// treats it.
+    /// from the full clone's, so callers may want to warn. A shallow-file path that cannot be
+    /// represented natively counts as "not shallow", as the walk treats it.
     #[must_use]
     pub fn is_shallow(&self) -> bool {
-        match &self.backend {
-            Backend::Real { repo, .. } => repo.to_thread_local().is_shallow().unwrap_or(false),
-            Backend::Null(_) => false,
-        }
+        self.repo.to_thread_local().is_shallow().unwrap_or(false)
     }
 
     /// Read commit metadata for every commit in `range`: a git revision range, or a revset in a jj
     /// workspace. `None` means `HEAD` for git and `::@` for jj. Reviewers are read only when
     /// `need_reviewers` is set, since they feed only the reviews table and decoding every commit
-    /// message is costly on large histories. A nulled repository drops its canned reviewers too.
+    /// message is costly on large histories.
     ///
     /// # Errors
     ///
     /// Returns an error if the range cannot be resolved or a commit object cannot be read.
     pub fn walk(&self, range: Option<&str>, need_reviewers: bool) -> Result<Vec<WalkedCommit>> {
-        match &self.backend {
-            Backend::Real {
-                repo: tsr,
-                revisions,
-            } => {
-                let mut repo = tsr.to_thread_local();
-                // Match `numstats`: an object cache lets the metadata read reuse commits the
-                // traversal already decoded instead of re-reading packs.
-                repo.object_cache_size_if_unset(8 * 1024 * 1024);
-                match revisions {
-                    Revisions::Git => walk_git(&repo, range.unwrap_or("HEAD"), need_reviewers),
-                    Revisions::Jj(workspace) => {
-                        walk_jj(&repo, workspace, range.unwrap_or("::@"), need_reviewers)
-                    }
-                }
+        let mut repo = self.repo.to_thread_local();
+        // Match `numstats`: an object cache lets the metadata read reuse commits the traversal
+        // already decoded instead of re-reading packs.
+        repo.object_cache_size_if_unset(8 * 1024 * 1024);
+        match &self.revisions {
+            Revisions::Git => walk_git(&repo, range.unwrap_or("HEAD"), need_reviewers),
+            Revisions::Jj(workspace) => {
+                walk_jj(&repo, workspace, range.unwrap_or("::@"), need_reviewers)
             }
-            Backend::Null(commits) => Ok(commits
-                .iter()
-                .map(|c| {
-                    let mut meta = c.meta.clone();
-                    if !need_reviewers {
-                        meta.reviewers.clear();
-                    }
-                    WalkedCommit {
-                        meta,
-                        numstat: Numstat::Known(c.diff),
-                    }
-                })
-                .collect()),
         }
     }
 
@@ -188,29 +129,13 @@ impl Repo {
         &self,
         commits: &[&'a WalkedCommit],
     ) -> Result<Vec<(&'a CommitMeta, DiffStat)>> {
-        match &self.backend {
-            Backend::Real {
-                repo: tsr,
-                revisions,
-            } => commits
-                .par_iter()
-                .map_init(
-                    || Worker::new(tsr.to_thread_local(), revisions),
-                    |worker, c| Ok((&c.meta, worker.numstat(c)?)),
-                )
-                .collect(),
-            Backend::Null(_) => Ok(commits
-                .iter()
-                .map(|c| {
-                    let diff = match c.numstat {
-                        Numstat::Known(diff) => diff,
-                        // A nulled repository yields only known numstats.
-                        Numstat::Diff { .. } => DiffStat::default(),
-                    };
-                    (&c.meta, diff)
-                })
-                .collect()),
-        }
+        commits
+            .par_iter()
+            .map_init(
+                || Worker::new(self.repo.to_thread_local(), &self.revisions),
+                |worker, c| Ok((&c.meta, worker.numstat(c)?)),
+            )
+            .collect()
     }
 }
 

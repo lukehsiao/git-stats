@@ -1,0 +1,7 @@
+# Keep the host's git config out of every process cargo runs, tests included. A global
+# `mailmap.file`, `diff.renames`, or attributes file would otherwise change what the fixture
+# repositories hold and what git-stats reads from them. `force` wins over a value the shell already
+# exports.
+[env]
+GIT_CONFIG_GLOBAL = { value = ".cargo/test.gitconfig", relative = true, force = true }
+GIT_CONFIG_NOSYSTEM = { value = "1", force = true }
