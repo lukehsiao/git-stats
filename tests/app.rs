@@ -3,11 +3,10 @@
 
 mod common;
 
-use git_stats::app;
 use git_stats::model::{CommitMeta, Contributor, DiffStat, Options};
 use git_stats::repo::{NulledCommit, Repo};
 
-use common::{author, counts, has_author, options, report, reviewer, total};
+use common::{author, counts, has_author, options, report, reviewer, run, total};
 
 fn commit(name: &str, email: &str, time: i64, diff: DiffStat) -> NulledCommit {
     NulledCommit {
@@ -124,7 +123,7 @@ fn invalid_author_pattern_is_a_typed_error() {
     let mut opts = options(None);
     opts.authors = vec!["[".to_string()];
 
-    let err = app::run(&repo, &opts).unwrap_err();
+    let err = run(&repo, &opts).unwrap_err();
     assert!(
         matches!(err, git_stats::Error::AuthorPattern(_)),
         "expected AuthorPattern, got: {err:?}"

@@ -1,5 +1,7 @@
+use gix::date::Zoned;
 use regex::Regex;
 
+use crate::error::{Error, Result};
 use crate::model::CommitMeta;
 
 /// Which commits count toward the stats table: those by a matching author, committed inside a date
@@ -12,22 +14,27 @@ pub struct CommitFilter {
 }
 
 impl CommitFilter {
-    /// Compile the author patterns and take the date window, in seconds since the Unix epoch. Each
-    /// bound is optional and inclusive.
+    /// Compile the author patterns and parse the date window. Each bound is optional and
+    /// inclusive. Dates accept ISO 8601, RFC 2822, Unix timestamps, and relative spellings like "2
+    /// weeks ago" (a documented subset of git's approxidate), which resolve against `now`.
     ///
     /// # Errors
     ///
-    /// Returns the underlying [`regex::Error`] if any pattern is not a valid regex.
+    /// Returns [`Error::InvalidDate`] if a bound is not a recognized date, or
+    /// [`Error::AuthorPattern`] if a pattern is not a valid regex.
     pub fn new(
         authors: &[String],
-        since: Option<i64>,
-        until: Option<i64>,
-    ) -> Result<Self, regex::Error> {
+        since: Option<&str>,
+        until: Option<&str>,
+        now: &Zoned,
+    ) -> Result<Self> {
+        let since = since.map(|s| parse_date(s, now)).transpose()?;
+        let until = until.map(|u| parse_date(u, now)).transpose()?;
         Ok(Self {
             authors: authors
                 .iter()
-                .map(|p| Regex::new(p))
-                .collect::<Result<_, _>>()?,
+                .map(|p| Regex::new(p).map_err(Error::from))
+                .collect::<Result<_>>()?,
             since,
             until,
         })
@@ -47,11 +54,27 @@ impl CommitFilter {
     }
 }
 
+/// Parse a `--since`/`--until` date into seconds since the Unix epoch.
+fn parse_date(input: &str, now: &Zoned) -> Result<i64> {
+    gix::date::parse(input, Some(now.clone()))
+        .map(|time| time.seconds)
+        .map_err(|e| Error::InvalidDate {
+            input: input.to_string(),
+            message: e.to_string(),
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::Contributor;
     use hegel::generators::{self, Generator};
+
+    /// An arbitrary but fixed `now`. Its odd offset makes a test that depends on the time zone by
+    /// accident stand out.
+    fn now() -> Zoned {
+        "2001-02-03T04:05:06+05:45[+05:45]".parse().unwrap()
+    }
 
     /// Multi-word names exercise filtering against idents that contain spaces. Some begin with "a",
     /// so the `^a` pattern keeps a mix.
@@ -73,6 +96,17 @@ mod tests {
         }
     }
 
+    fn committed_at(time_seconds: i64) -> CommitMeta {
+        CommitMeta {
+            author: Contributor {
+                name: "Ada".to_string(),
+                email: "ada@x".to_string(),
+            },
+            time_seconds,
+            reviewers: Vec::new(),
+        }
+    }
+
     /// A commit is kept exactly when its committer time lies in `[since, until]`.
     #[hegel::test]
     fn date_window_membership(tc: hegel::TestCase) {
@@ -81,8 +115,20 @@ mod tests {
         let until = tc.draw(generators::optional(generators::integers::<i64>()));
         let want = since.is_none_or(|s| meta.time_seconds >= s)
             && until.is_none_or(|u| meta.time_seconds <= u);
-        let filter = CommitFilter::new(&[], since, until).unwrap();
+        let since = since.map(|s| format!("@{s}"));
+        let until = until.map(|u| format!("@{u}"));
+        let filter = CommitFilter::new(&[], since.as_deref(), until.as_deref(), &now()).unwrap();
         assert_eq!(filter.keeps(&meta), want);
+    }
+
+    /// A relative date counts back from `now`, to the second.
+    #[test]
+    fn relative_dates_resolve_against_now() {
+        let now = now();
+        let day_ago = now.timestamp().as_second() - 24 * 60 * 60;
+        let filter = CommitFilter::new(&[], Some("1 day ago"), None, &now).unwrap();
+        assert!(filter.keeps(&committed_at(day_ago)));
+        assert!(!filter.keeps(&committed_at(day_ago - 1)));
     }
 
     /// With several patterns, a commit is kept when its whole `Name <email>` identity matches any
@@ -91,7 +137,7 @@ mod tests {
     fn author_filter_matches_any_pattern_against_the_ident(tc: hegel::TestCase) {
         let meta = tc.draw(commit_meta().print_as_debug());
         let patterns = ["^a".to_string(), "ross@".to_string()];
-        let filter = CommitFilter::new(&patterns, None, None).unwrap();
+        let filter = CommitFilter::new(&patterns, None, None, &now()).unwrap();
         let name = meta.author.name.as_str();
         let want = name.starts_with('a') || name == "bob ross";
         assert_eq!(filter.keeps(&meta), want);
@@ -99,6 +145,13 @@ mod tests {
 
     #[test]
     fn an_invalid_pattern_is_an_error() {
-        assert!(CommitFilter::new(&["[".to_string()], None, None).is_err());
+        let err = CommitFilter::new(&["[".to_string()], None, None, &now()).unwrap_err();
+        assert!(matches!(err, Error::AuthorPattern(_)), "{err:?}");
+    }
+
+    #[test]
+    fn an_unparseable_date_is_an_error() {
+        let err = CommitFilter::new(&[], None, Some("not-a-real-date"), &now()).unwrap_err();
+        assert!(matches!(err, Error::InvalidDate { .. }), "{err:?}");
     }
 }

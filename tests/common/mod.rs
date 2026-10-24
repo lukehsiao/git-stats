@@ -8,6 +8,7 @@ use std::path::Path;
 use std::process::Command;
 
 use git_stats::app;
+use git_stats::error::Result;
 use git_stats::logic::table::{Report, Review, Stat};
 use git_stats::model::{Options, SortBy};
 use git_stats::repo::Repo;
@@ -26,8 +27,19 @@ pub fn options(range: Option<&str>) -> Options {
     }
 }
 
+/// An arbitrary but fixed `now` for relative dates. Its odd offset makes a test that depends on the
+/// time zone by accident stand out.
+fn now() -> gix::date::Zoned {
+    "2001-02-03T04:05:06+05:45[+05:45]".parse().unwrap()
+}
+
+/// Run the application as of [`now`].
+pub fn run(repo: &Repo, opts: &Options) -> Result<Report> {
+    app::run(repo, opts, &now())
+}
+
 pub fn report(repo: &Repo, opts: &Options) -> Report {
-    app::run(repo, opts).unwrap()
+    run(repo, opts).unwrap()
 }
 
 /// The stats table row whose Contributor key is exactly `key`.

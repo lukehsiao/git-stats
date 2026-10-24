@@ -17,7 +17,7 @@ fn main() -> Result<()> {
             "warning: this is a shallow clone; commits beyond the shallow boundary are not counted"
         );
     }
-    let report = app::run(&repo, &opts)?;
+    let report = app::run(&repo, &opts, &gix::date::Zoned::now())?;
     write_report(&render::report(&report))
 }
 

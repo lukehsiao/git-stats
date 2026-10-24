@@ -729,47 +729,15 @@ fn merge_bases(
     Ok(bases.into_iter().map(gix::Id::detach).collect())
 }
 
-/// Parse a `--since`/`--until` style date into seconds since the Unix epoch. Accepts ISO 8601, RFC
-/// 2822, unix timestamps, and relative spellings like "2 weeks ago" (a documented subset of git's
-/// approxidate).
-///
-/// # Errors
-///
-/// Returns an error if the input is not a recognized date format.
-pub fn parse_date(input: Option<&str>) -> Result<Option<i64>> {
-    let Some(s) = input else { return Ok(None) };
-    let now = gix::date::Zoned::now();
-    let time = gix::date::parse(s, Some(now)).map_err(|e| Error::InvalidDate {
-        input: s.to_string(),
-        message: e.to_string(),
-    })?;
-    Ok(Some(time.seconds))
-}
-
 #[cfg(test)]
 mod tests {
     use hegel::generators;
 
     use super::{
-        find_jj_workspace, jj_workspace_to_read, parse_date, parse_jj_log_line, parse_reviewers,
-        split_ident, trailer_contributor,
+        find_jj_workspace, jj_workspace_to_read, parse_jj_log_line, parse_reviewers, split_ident,
+        trailer_contributor,
     };
     use crate::model::{Contributor, DiffStat, Vcs};
-
-    #[test]
-    fn parse_date_returns_none_for_no_input() {
-        assert_eq!(parse_date(None).unwrap(), None);
-    }
-
-    #[test]
-    fn parse_date_accepts_an_iso_date() {
-        assert!(parse_date(Some("2020-01-01")).unwrap().is_some());
-    }
-
-    #[test]
-    fn parse_date_rejects_unparseable_input() {
-        assert!(parse_date(Some("not-a-real-date")).is_err());
-    }
 
     /// Every line `JJ_LOG_TEMPLATE` can print parses back to what it encodes: a bare commit ID, or
     /// an ID followed by files, insertions, and deletions.

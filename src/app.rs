@@ -2,24 +2,30 @@
 //! repository, transforming with pure logic, and reading again for numstats. It returns the report
 //! as data; rendering it is the caller's choice.
 
+use gix::date::Zoned;
+
 use crate::error::Result;
 use crate::logic::filter::CommitFilter;
 use crate::logic::table::{self, Report, StatsTable};
 use crate::model::Options;
-use crate::repo::{self, Repo, WalkedCommit};
+use crate::repo::{Repo, WalkedCommit};
 
-/// Build the report: the stats table, and the reviews table when `opts.reviews` is set.
+/// Build the report: the stats table, and the reviews table when `opts.reviews` is set. Relative
+/// `--since` and `--until` dates resolve against `now`.
 ///
 /// # Errors
 ///
 /// Returns an error if the revision range cannot be resolved, a date or author pattern is invalid,
 /// or a commit's diff cannot be read.
-pub fn run(repo: &Repo, opts: &Options) -> Result<Report> {
+pub fn run(repo: &Repo, opts: &Options, now: &Zoned) -> Result<Report> {
     // PROCESS: validate the filters first. They are cheap to compile, and a typo'd pattern or date
     // should error immediately, not after a walk that can take minutes on a large history.
-    let since = repo::parse_date(opts.since.as_deref())?;
-    let until = repo::parse_date(opts.until.as_deref())?;
-    let filter = CommitFilter::new(&opts.authors, since, until)?;
+    let filter = CommitFilter::new(
+        &opts.authors,
+        opts.since.as_deref(),
+        opts.until.as_deref(),
+        now,
+    )?;
 
     // READ: walk the range once to get commit metadata.
     let walked = repo.walk(opts.range.as_deref(), opts.reviews)?;

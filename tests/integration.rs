@@ -6,12 +6,11 @@ use std::fmt::Write as _;
 use std::io::{Read as _, Write as _};
 use std::process::{Command, Stdio};
 
-use git_stats::app;
 use git_stats::model::Vcs;
 use git_stats::repo::Repo;
 
 mod common;
-use common::{author, counts, git, git_available, options, report, reviewer, total};
+use common::{author, counts, git, git_available, options, report, reviewer, run, total};
 
 #[test]
 fn reads_a_real_repository() {
@@ -352,7 +351,7 @@ fn filter_validation_precedes_the_walk() {
 
     // Both the range and the date are bad. The date must win: filters are cheap to validate and
     // should error before a potentially expensive walk of the whole range even starts.
-    let err = app::run(&repo, &opts).unwrap_err();
+    let err = run(&repo, &opts).unwrap_err();
     assert!(
         matches!(err, git_stats::Error::InvalidDate { .. }),
         "expected InvalidDate before any range resolution, got: {err:?}"
@@ -887,7 +886,7 @@ fn decode_failures_name_the_offending_commit() {
     git(p, &["commit-graph", "write", "--reachable"]);
 
     let repo = Repo::open(p, Vcs::Git).unwrap();
-    let err = app::run(&repo, &options(Some("HEAD"))).unwrap_err();
+    let err = run(&repo, &options(Some("HEAD"))).unwrap_err();
     assert!(
         err.to_string().contains(&bad),
         "error should name the undecodable commit {bad}: {err}"

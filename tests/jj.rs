@@ -6,11 +6,10 @@ use std::process::Command;
 
 mod common;
 
-use git_stats::app;
 use git_stats::model::Vcs;
 use git_stats::repo::Repo;
 
-use common::{counts, git, has_author, options, report, total};
+use common::{counts, git, has_author, options, report, run, total};
 
 /// A temporary directory holding a hermetic jj config next to a workspace.
 struct Fixture {
@@ -175,7 +174,7 @@ fn colocated_workspace_defaults_to_jj_unless_git_is_forced() {
     assert_eq!(report(&jj, &options(Some("::@-"))), git_r);
 
     // In jj mode the range is a revset, where `HEAD` names nothing.
-    assert!(app::run(&jj, &options(Some("HEAD"))).is_err());
+    assert!(run(&jj, &options(Some("HEAD"))).is_err());
 }
 
 #[test]
