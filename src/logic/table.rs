@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use crate::model::{Author, CommitMeta, DiffStat, Review, SortBy, Stat};
+use crate::model::{CommitMeta, Contributor, DiffStat, Review, SortBy, Stat};
 
-/// One commit's contribution to the stats table: its grouping key and numstat.
+/// One commit's contribution to the stats table: its Author's Contributor key and its numstat.
 #[derive(Debug, Clone)]
 pub struct CommitStat {
-    pub author_key: String,
+    pub key: String,
     pub diff: DiffStat,
 }
 
@@ -28,16 +28,6 @@ pub struct Report {
 /// Trailer tokens (lowercased) that count as a review/test sign-off.
 const REVIEW_TOKENS: [&str; 3] = ["acked-by", "tested-by", "reviewed-by"];
 
-/// The author display and grouping key: `Name <email>` when `email`, else `Name`.
-#[must_use]
-pub fn author_key(author: &Author, email: bool) -> String {
-    if email {
-        format!("{} <{}>", author.name, author.email)
-    } else {
-        author.name.clone()
-    }
-}
-
 /// Build the stats table from per-commit stats: one row per Author, sorted by `sort`, plus the
 /// Total row. Returns `None` when there are no commits, since an empty table is not shown at all.
 ///
@@ -53,9 +43,7 @@ pub fn stats_table(commits: &[CommitStat], sort: SortBy, reverse: bool) -> Optio
     let mut total = empty_stat("Total");
     for c in commits {
         add(
-            by_key
-                .entry(&c.author_key)
-                .or_insert_with_key(|k| empty_stat(k)),
+            by_key.entry(&c.key).or_insert_with_key(|k| empty_stat(k)),
             c.diff,
         );
         add(&mut total, c.diff);
@@ -98,7 +86,7 @@ pub fn reviews_table<'a>(
             {
                 continue;
             }
-            let key = reviewer_key(&t.value, email);
+            let key = reviewer(&t.value).key(email);
             if !credited.contains(&key) {
                 credited.push(key);
             }
@@ -139,22 +127,17 @@ fn add(s: &mut Stat, diff: DiffStat) {
     s.deletions = s.deletions.saturating_add(diff.deletions);
 }
 
-/// The reviewer key from a trailer value such as `Ada Lovelace <ada@x>`, formed like an author key:
-/// `Name <email>` with `email`, otherwise `Name`. Whitespace around the name and the email does not
-/// matter. A trailer with only `<email>` uses the email as the key, so it does not show as a blank
-/// name.
-fn reviewer_key(value: &str, email: bool) -> String {
+/// The Reviewer named by a trailer value such as `Ada Lovelace <ada@x>`. Whitespace around the name
+/// and the email does not matter. A value without `<email>` is all name.
+fn reviewer(value: &str) -> Contributor {
     let value = value.trim();
-    let (name, address) = match value.strip_suffix('>').and_then(|v| v.split_once('<')) {
-        Some((name, address)) => (name.trim(), address.trim()),
+    let (name, email) = match value.strip_suffix('>').and_then(|v| v.split_once('<')) {
+        Some((name, email)) => (name.trim(), email.trim()),
         None => (value, ""),
     };
-    if name.is_empty() {
-        address.to_string()
-    } else if email && !address.is_empty() {
-        format!("{name} <{address}>")
-    } else {
-        name.to_string()
+    Contributor {
+        name: name.to_string(),
+        email: email.to_string(),
     }
 }
 
@@ -172,6 +155,10 @@ mod tests {
     use hegel::generators::{self, Generator};
     use std::cmp::Ordering;
     use std::collections::BTreeMap;
+
+    fn reviewer_key(value: &str, email: bool) -> String {
+        reviewer(value).key(email)
+    }
 
     /// A small author pool forces grouping. It has multi-word names, so grouping and ordering see
     /// spaces, and names that differ only in case, so ordering sees byte order. `u32`-range diffs
@@ -192,7 +179,7 @@ mod tests {
         for _ in 0..n {
             let who = tc.draw(generators::integers::<usize>().max_value(NAMES.len() - 1));
             commits.push(CommitStat {
-                author_key: NAMES[who].to_string(),
+                key: NAMES[who].to_string(),
                 diff: DiffStat {
                     insertions: u64::from(tc.draw(generators::integers::<u32>())),
                     deletions: u64::from(tc.draw(generators::integers::<u32>())),
@@ -231,7 +218,7 @@ mod tests {
         let reverse = tc.draw(generators::booleans());
         let mut expected: BTreeMap<&str, (u64, u64, u64, u64)> = BTreeMap::new();
         for c in &commits {
-            let e = expected.entry(c.author_key.as_str()).or_default();
+            let e = expected.entry(c.key.as_str()).or_default();
             e.0 += 1;
             e.1 += c.diff.files;
             e.2 += c.diff.insertions;
@@ -315,7 +302,7 @@ mod tests {
         let mut commits = Vec::with_capacity(n);
         for _ in 0..n {
             commits.push(CommitStat {
-                author_key: "boundary".to_string(),
+                key: "boundary".to_string(),
                 diff: DiffStat {
                     insertions: tc.draw(generators::integers::<u64>()),
                     deletions: tc.draw(generators::integers::<u64>()),
@@ -339,7 +326,7 @@ mod tests {
                     .max_size(3),
             );
             metas.push(CommitMeta {
-                author: Author {
+                author: Contributor {
                     name: "Author".to_string(),
                     email: "author@x".to_string(),
                 },

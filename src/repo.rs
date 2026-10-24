@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 use rayon::prelude::*;
 
 use crate::error::{Error, Result};
-use crate::model::{Author, CommitMeta, DiffStat, Trailer, Vcs};
+use crate::model::{CommitMeta, Contributor, DiffStat, Trailer, Vcs};
 
 /// A commit yielded by [`Repo::walk`]: its logic-facing metadata plus an opaque handle the wrapper
 /// uses to compute the numstat later.
@@ -487,7 +487,7 @@ fn commit_meta(
         Vec::new()
     };
     Ok(CommitMeta {
-        author: Author {
+        author: Contributor {
             name: author.name.to_string(),
             email: author.email.to_string(),
         },

@@ -27,7 +27,7 @@ pub fn keep_indices<'a>(
         .enumerate()
         .filter(|(_, m)| {
             let author_ok = authors.is_empty() || {
-                let ident = format!("{} <{}>", m.author.name, m.author.email);
+                let ident = m.author.ident();
                 authors.iter().any(|re| re.is_match(&ident))
             };
             author_ok
@@ -41,7 +41,7 @@ pub fn keep_indices<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Author;
+    use crate::model::Contributor;
     use hegel::generators::{self, Generator};
 
     #[hegel::composite]
@@ -58,7 +58,7 @@ mod tests {
                 "carol kane",
             ]));
             metas.push(CommitMeta {
-                author: Author {
+                author: Contributor {
                     name: name.to_string(),
                     email: format!("{name}@example.com"),
                 },
